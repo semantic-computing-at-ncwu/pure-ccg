@@ -3,7 +3,7 @@ version:             0.1.0.0
 github:              "semantic-computing-at-ncwu/pure-ccg"
 license:             BSD3
 author:              "North China University of Water Resources and Electric Power"
-maintainer:          "wangqingjiang@ncwu.edu.cn"
+maintainer:          "wangqingjiang@ncwu.edu.cn, 2972867357@qq.com"
 copyright:           "Copyright (c) 2026 North China University of Water Resources and Electric Power"
 
 extra-source-files:
@@ -43,7 +43,7 @@ library:
   source-dirs: src
 
 executables:
-  my-ccg-exe:
+  pure-ccg-exe:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -51,10 +51,10 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - my-ccg
+    - pure-ccg
 
 tests:
-  my-ccg-test:
+  pure-ccg-test:
     main:                Spec.hs
     source-dirs:
     - test
@@ -64,5 +64,5 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - my-ccg
+    - pure-ccg
     - hspec

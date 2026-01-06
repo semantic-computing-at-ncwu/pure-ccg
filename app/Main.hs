@@ -57,8 +57,8 @@ main = do
     hSetEncoding stdout utf8                       -- Set encoding for stdout as UTF8
     hFlush stdout                                  -- Flush buffered data to assure changing the encoding.
 
-    putStrLn " Chinese CCG parser (build 0.2.7.0)"
-    putStrLn " Copyright (c) 2019-2025 China University of Water Resources and Electric Power, All rights reserved."
+    putStrLn " Chinese pure-CCG parser (build 0.1.0.0)"
+    putStrLn " Copyright (c) 2019-2026 North China University of Water Resources and Electric Power, All rights reserved."
 
     (username, ok) <- login 1
     if ok
