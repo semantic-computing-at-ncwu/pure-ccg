@@ -1,4 +1,4 @@
-# Changelog for my-ccg
+# Changelog for pure-ccg
 
 ## Unreleased changes
 
@@ -53,3 +53,5 @@ syntactic ambiguities by the clustering result on StruGene samples. Thus, one ki
 
 2023-9-2 Fixed display algorithm of parsing tree. In the past, the width of initial phrase (namely word) is determined by itself. Now, the width is
 added by an increment delta which is needed for diplay the descendants of the word. See function getCateWidth.
+
+2026-1-6 Forked from my-ccg 0.2.7.0.

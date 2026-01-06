@@ -1,23 +1,23 @@
-name:                my-ccg
-version:             0.2.7.0
-github:              "wangqingjiang-ncwu/my-ccg"
+name:                pure-ccg
+version:             0.1.0.0
+github:              "semantic-computing-at-ncwu/pure-ccg"
 license:             BSD3
-author:              "China University of Water Resources and Electric Power"
+author:              "North China University of Water Resources and Electric Power"
 maintainer:          "wangqingjiang@ncwu.edu.cn"
-copyright:           "Copyright (c) 2019-2025 China University of Water Resources and Electric Power"
+copyright:           "Copyright (c) 2026 North China University of Water Resources and Electric Power"
 
 extra-source-files:
 - README.md
 - ChangeLog.md
 
 # Metadata used when publishing your package
-synopsis:            A package for CCG-based Chinese language processing
+synopsis:            A package for pure CCG-based Chinese language processing
 category:            Natural Language Understanding
 
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/wangqingjiang-ncwu/my-ccg#readme>
+description:         Please see the README on GitHub at <https://github.com/semantic-computing-at-ncwu/pure-ccg>
 
 dependencies:
 - base >= 4.7 && < 5

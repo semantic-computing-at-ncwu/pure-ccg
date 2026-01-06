@@ -1,4 +1,4 @@
--- Copyright (c) 2019-2026 China University of Water Resources and Electric Power.
+-- Copyright (c) 2019-2026 North China University of Water Resources and Electric Power.
 -- All rights reserved.
 
 {- This module includes types and functions about Combinatory Logic, the original version of which was written by Liu Pan-pan and Wang Qing-jiang at 2023
