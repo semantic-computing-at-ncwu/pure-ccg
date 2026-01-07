@@ -44,10 +44,22 @@ rules :: [(Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, T
 rules = [appF, appB, comFh, comFh2, comBh, comFc, comBc, comBc2, raiFh, raiBh, raiBh2]
 
 {- In parsing trees, every combination should print its corresponding rule tag.
- - To now, the rules used for combining two phrases are not limited in the following.
+ - Syntactic rules come from combinators in CL.
+ - The first part of syntactic rules are those in Mark Steedman's CCG. The association relations between original tags
+ - and new tags are illustrated as follows. Here, "A" is not a combinator, which represents functional application.
+ -   [">", "<", ">B", ">B2", "<B", ">Bx", "<Bx", "<Bx2", ">T->B", ">T->Bx", "<T-<B", "<T-<B2", "<T-<Bx"]
+ -     |    |    |      |      |     |      |       |       |        |         |        |         |
+ -   ["A", "T", "B",  "B3",   "B'", "B",  "B'",    "U",    "R",     "R",      "C",    "B3'",     "C"]
+ - Here, B3 = BBB, B3' = CBBB.
+ - On the one hand, not only combinator "B" was used in Steedman's CCG such that Chinese translated "Combinatory" as "组合的".
+ - Actually, combinators "T" and "B" compose multiple combinators, and it is more reasonable to translate "Combinatory" as "结合的".
+ - On the other hand, one combinator can correspond two syntactic rules in CCG, such as "B", "B'", "R", and "C".
+ - The second part of syntactic rules come from other usual combinators except the above, including
+ -   [S, V, S']
+ - It is possible that the second part of combinators are not used in real Chinese syntactic parsing.
  -}
 ruleTags :: [Tag]
-ruleTags = [">","<",">B",">B2","<B",">Bx","<Bx","<Bx2",">T->B",">T->Bx","<T-<B","<T-<B2","<T-<Bx"]
+ruleTags = ["A","T","B","B'","U","R","C","B3","B3'","S","V","S'"]
 
 {- Combine two semantic components by given combinator and reduct at most 10 steps.
  - Semantics of word or phrase is considered as CL term. return reducted CL term.
@@ -58,7 +70,7 @@ semComb combinator se1 se2 = show t'
       t = getTermFromStr $ "((" ++ combinator ++ " " ++ se1 ++ ") " ++ se2 ++ ")"
       t' = reduct 0 10 t
 
--- CCG forward application, using combinator "A" to combine two semantic components.
+-- Forward application comes from combinator "A", taking the form of "X/Y Y -> X", while combinator "A" is used to combine two semantic components.
 appF :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 appF cate1 cate2
     | isPrimitive ca1 = (nilCate, ">", "", "", False)
