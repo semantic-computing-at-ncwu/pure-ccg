@@ -121,74 +121,74 @@ pos = ["n","ng","nt","nd","nl","nh","ns","nn","ni","nz",
 posCate :: [(POS, CateSymb)]
 posCate = [("n","np"),
            ("ng","np"),
-           ("nt","(s\\.np)/#(s\\.np)"),                                         -- Using N/d and Ds/d to get np and s/*s.
-           ("nd","np\\*np"),
+           ("nt","(s/np)/(s/np)"),             -- Using N/d and Ds/d to get np and s/s.
+           ("nd","np/np"),
            ("nl","np"),
            ("nh","np"),
            ("ns","np"),
            ("nn","np"),
            ("ni","np"),
            ("nz","np"),
-           ("v","s\\.np|(s\\.np)/.np|((s\\.np)/.np)/.np"),
-           ("vt","(s\\.np)/.np"),                                               -- For only one object.
-           ("vt2","((s\\.np)/.np)/.np"),                                        -- For indirected object and directed object.
-           ("vi","s\\.np"),
-           ("vl","(s\\.np)/.np"),
-           ("vu","(s\\.np)/#(s\\.np)"),
-           ("vd","(s\\.np)\\x(s\\.np)"),
-           ("a","np/.np"),
-           ("aq","np/.np"),
-           ("as","np/.np"),
-           ("f","np/*np"),
-           ("m","np/*np"),
-           ("q","(np/*np)\\*(np/*np)"),                -- 数量短语做定语的频次最高
+           ("v","s/np|(s/np)/np|((s/np)/np)/np"),
+           ("vt","(s/np)/np"),                 -- For only one object.
+           ("vt2","((s/np)/np)/np"),           -- For indirected object and directed object.
+           ("vi","s/np"),
+           ("vl","(s/np)/np"),
+           ("vu","(s/np)/(s/np)"),
+           ("vd","(s/np)/(s/np)"),
+           ("a","np/np"),
+           ("aq","np/np"),
+           ("as","np/np"),
+           ("f","np/np"),
+           ("m","np/np"),
+           ("q","(np/np)/(np/np)"),            -- 数量短语做定语的频次最高
            ("r","np"),
-           ("d","(s\\.np)/#(s\\.np)"),                 -- 副词做动词状语的频次最高，去掉(np/.np)/*(np/.np)
-           ("dv","(s\\.np)/#(s\\.np)"),                -- 动词的状语，未用
-           ("da","(np/.np)/*(np/.np)"),                -- 形容词的状语
-           ("dx","(s\\.np)/x(s\\.np)"),                -- 趋向动词的状语
-           ("ds","s/*s"),                              -- 句子的状语
-           ("p","((s\\.np)/#(s\\.np))/*np"),           -- 通过Cv/d、Ds/d，去掉了类型((s\\.np)\\x(s\\.np))/*np、(s/*s)/*np"
-           ("pa","((s/.np)\\.np)/#((s\\.np)/.np)"),    -- 介词'把'的类型，宾语提前到动语前
-           ("pb","(s/#(s/.np))\\.np"),                 -- 介宾'被'的类型，宾语提取到主语前
-           ("c","(X\\*X)/*X"),                         -- 连词的典型类型，双向连词，分别通过Cb/c、Cf/c得到后向、前向连词。
-           ("cb","X\\*X"),                             -- 后向连词
-           ("cf","X/*X"),                              -- 前向连词
-           ("u","(np/*np)\\*np|((s\\.np)/#(s\\.np))\\*(np/.np)|((s\\.np)\\x(s\\.np))/*(np/.np)|((np/.np)\\*(np/.np))/*((np/.np)/*(np/.np))|(s\\.np)\\x(s\\.np)|(np/.np)\\*(np/.np)|X\\*X"),
-           ("u1","(np/*np)\\*np"),                     -- 的
-           ("u2","((s\\.np)/#(s\\.np))\\*(np/.np)"),   -- 地
-           ("u3","((s\\.np)\\x(s\\.np))/*(np/.np)"),   -- 得，通过U3d/u3，去掉了类型((np/.np)\\*(np/.np))/*((np/.np)/*(np/.np))
-           ("u4","(s\\.np)\\x(s\\.np)"),               -- 着、了、过
-           ("u5","X\\#X"),                             -- 等、似的
-           ("u6","np/*((s\\.np)/.np)"),                -- 所
-           ("y","X\\.X"),                              -- 语气词，吗、呢、了、...
-           ("e","np|(s\\.np)/#(s\\.np)"),
-           ("o","np|(s\\.np)/#(s\\.np)"),
-           ("i","np|s\\.np|np/.np|s/*s"),
+           ("d","(s/np)/(s/np)"),              -- 副词做动词状语的频次最高，去掉(np/.np)/*(np/.np)
+           ("dv","(s/np)/(s/np)"),             -- 动词的状语，未用
+           ("da","(np/np)/(np/np)"),           -- 形容词的状语
+           ("dx","(s/np)/(s/np)"),             -- 趋向动词的状语
+           ("ds","s/s"),                       -- 句子的状语
+           ("p","((s/np)/(s/np))/np"),         -- 通过Cv/d、Ds/d，去掉了类型((s\\.np)\\x(s\\.np))/*np、(s/*s)/*np"
+           ("pa","((s/np)/np)/((s/np)/np)"),   -- 介词'把'的类型，宾语提前到动语前
+           ("pb","(s/(s/np))/np"),             -- 介宾'被'的类型，宾语提取到主语前
+           ("c","(X/X)/X"),                    -- 连词的典型类型，双向连词，分别通过Cb/c、Cf/c得到后向、前向连词。
+           ("cb","X/X"),                       -- 后向连词
+           ("cf","X/X"),                       -- 前向连词
+           ("u","(np/np)/np|((s/np)/(s/np))/(np/np)|((s/np)/(s/np))/(np/np)|((np/np)/(np/np))/((np/np)/(np/np))|(s/np)/(s/np)|(np/np)/(np/np)|X/X"),
+           ("u1","(np/np)/np"),                -- 的
+           ("u2","((s/np)/(s/np))/(np/np)"),   -- 地
+           ("u3","((s/np)/(s/np))/(np/np)"),   -- 得，通过U3d/u3，去掉了类型((np/.np)\\*(np/.np))/*((np/.np)/*(np/.np))
+           ("u4","(s/np)/(s/np)"),             -- 着、了、过
+           ("u5","X/X"),                       -- 等、似的
+           ("u6","np/((s/np)/np)"),            -- 所
+           ("y","X/X"),                        -- 语气词，吗、呢、了、...
+           ("e","np|(s/np)/(s/np)"),
+           ("o","np|(s/np)/(s/np)"),
+           ("i","np|s/np|np/np|s/s"),
            ("in","np"),
-           ("iv","s\\.np"),
-           ("ia","np/.np"),
-           ("id","(s\\.np)/#(s\\.np)"),
-           ("ic","s/*s"),
-           ("j","np|s\\.np|(s\\.np)/.np|np/.np"),
+           ("iv","s/np"),
+           ("ia","np/np"),
+           ("id","(s/np)/(s/np)"),
+           ("ic","s/s"),
+           ("j","np|s/np|(s/np)/np|np/np"),
            ("jn","np"),
-           ("jv","s\\.np|(s\\.np)/.np"),
-           ("jvi","s\\.np"),
-           ("jvt","(s\\.np)/.np"),
-           ("ja","np/.np"),
-           ("h","np/*np"),                            -- 阿、老、初、第
-           ("k","np\\*X"),                            -- 子、儿、（工作）者、（我）们、（新）式、（四年）制、
-           ("g","np|s\\.np|(s\\.np)/.np|np/.np"),
+           ("jv","s/np|(s/np)/np"),
+           ("jvi","s/np"),
+           ("jvt","(s/np)/np"),
+           ("ja","np/np"),
+           ("h","np/np"),                           -- 阿、老、初、第
+           ("k","np/X"),                            -- 子、儿、（工作）者、（我）们、（新）式、（四年）制、
+           ("g","np|s/np|(s/np)/np|np/np"),
            ("gn","np"),
-           ("gv","s\\.np|(s\\.np)/.np"),
-           ("gvi","s\\.np"),
-           ("gvt","(s\\.np)/.np"),
-           ("ga","np/.np"),
+           ("gv","s/np|(s/np)/np"),
+           ("gvi","s/np"),
+           ("gvt","(s/np)/np"),
+           ("ga","np/np"),
            ("x",""),
            ("w",""),
-           ("wc","(X\\*X)/*X"),                       -- 顿号（、），有时的逗号（，）
+           ("wc","(X/X)/X"),                       -- 顿号（、），有时的逗号（，）
            ("wn","np"),
-           ("ws","np"),                               -- 外文字符串
+           ("ws","np"),                            -- 外文字符串
            ("wu","")]
 
 {- To now, the recognizable phrasal structures are as following.
