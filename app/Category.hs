@@ -73,7 +73,7 @@ module Category (
 
 type Slash = String
 slashes :: [Slash]
-slashes = ["/"]
+slashes = ["/"] ++ ["/.","\\.","/#","\\#","/x","\\x","/*","\\*"]      -- Compatible with CCG
 
 type Prim = String
 primitives :: [Prim]
