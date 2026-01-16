@@ -8,15 +8,15 @@ Password:wqj
 Database:ccg4c
 
 # Sentence source
-sent_source:corpus_pccg
+sent_source:corpus_pccg_manual
 
 # The database tables where parsing trees and scripts come from.
-script_source:corpus_pccg
+script_source:corpus_pccg_manual
 
 # tree_source:treebank_by_identity_ph_euc_ot_euc_sg_euc_Sn001_200
 # tree_source:treebank_by_SLR_identity_ph_euc_ot_euc_sg_euc_Sn001_200
 # tree_source:treebank_including_SLR_CL_seman
-tree_source:corpus_pccg
+tree_source:corpus_pccg_manual
 
 # Field storing parsing tree, default value of which is 'tree'.
 tree_field:tree
@@ -27,6 +27,7 @@ tree_field:tree
 # Other values of tree_target:
 #   - corpus
 #   - corpus_pccg
+#   - corpus_pccg_manual
 #   - treebank_including_SLR
 #   - treebank_by_strugene2_identity_sim_euclidean_Hit
 #   - treebank_by_strugene2_identity_sim_euclidean_MaxFreq
@@ -41,12 +42,13 @@ tree_field:tree
 #   - tree_target:treebank_including_SLR_for_creating_stru_gene3_202508
 #   - tree_target:treebank_including_SLR_for_creating_stru_gene3a_202508
 #   - tree_target:treebank_including_SLR_for_creating_stru_gene3a_phrasyn0_202509
-tree_target:corpus_pccg
+#   - treebank_including_SLR_for_creating_stru_gene3a_phrasyn0_202601
+tree_target:corpus_pccg_manual
 
 # Model of phrasal Syntax. Now two models are available: phrasyn0 and phrasyn
 # phrasyn0: (Category, Tag, PhraStru)
 # phrasyn: (Category, Tag, PhraStru, Span)
-phrasyn:phrasyn0
+phrasyn_model:phrasyn0
 
 # Syntax ambiguity resolution model also is the name of MySQL table storing the samples of that model.
 # Model 'stru_gene_202412' is the newest one in StruGene series.
@@ -61,12 +63,12 @@ phrasyn:phrasyn0
 #   - stru_gene3_202508
 #   - stru_gene3a_202508
 #   - stru_gene3a_phrasyn0_202509
-syntax_ambig_resol_model:stru_gene_202501
+syntax_ambig_resol_model:stru_gene3a_phrasyn0_202601
 
 # Category ambiguity resolution model also is the name of MySQL table storing the samples of that model.
 # Possible values of this property:
 #   - slr_corpus_202509
-cate_ambig_resol_model:slr_corpus_202509
+cate_ambig_resol_model:slr_corpus_202601
 
 # Switch of updating syntax or category ambiguity resolution samples in database.
 # For grammar inconsistancy, parsing by scripts sometimes includes manually ambiguity resolution, using new category conversion rules or syntax rules.
@@ -75,7 +77,7 @@ cate_ambig_resol_model:slr_corpus_202509
 # When NOT hope to update syntax or category ambiguity resolution samples in database, set this switch as Off.
 # Now, category ambiguity resolution model SLR samples are stored with treebank created by parsing with scripts.
 # Switch category_ambig_resol_sample_update_switch is NOT used at present.
-syntax_ambig_resol_sample_update_switch:Off
+syntax_ambig_resol_sample_update_switch:On
 category_ambig_resol_sample_update_switch:Off
 
 # Distance Algo. for phrasal grammar aspects, overlapping types, and StruGene contexts.

@@ -281,9 +281,9 @@ cateComb onOff pc1 pc2
       v_N_HX = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp2, elem True (map (\x-> cateEqual x (fst3 csp)) vCate)]
       ctspaByvToN_HX = [rule cate1 cate2 | rule <- [appF], cate1 <- csp1, fst3 cate1 == conjCate, cate2 <- v_N_HX, elem Nv onOff]
 
--- When a verb is followed by backward conjunction X/X.
+-- When a verb is followed by forward conjunction X/X.
       v_N_CC = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp1, elem True (map (\x-> cateEqual x (fst3 csp)) vCate)]
-      ctspaByvToN_CC = [rule cate1 cate2 | rule <- [appB], cate1 <- v_N_CC, cate2 <- csp2, fst3 cate2 == conjCate4Backward, elem Nv onOff]
+      ctspaByvToN_CC = [rule cate1 cate2 | rule <- [appB], cate1 <- v_N_CC, cate2 <- csp2, fst3 cate2 == conjCate4Forward, elem Nv onOff]
 
 -- When a verb is followed by HX-structured phrases and they are type np/np.
       v_N_XX = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp1, elem True (map (\x-> cateEqual x (fst3 csp)) vCate)]
@@ -377,7 +377,7 @@ cateComb onOff pc1 pc2
  - (1) The adjective occupies predicate position,
  - (2) The adjective occupies headword position of DHv,
  - (3) The adjective occupies headword position of HvC, such as, "高兴a 一辈子mq", "会d 高兴a 一辈子", "高兴a 极d 了u4";
- - (4) The conversion also happens when the adjective follows <conjCate> or <conjCate4Backward> follows the adjective, and the coordination phrase acts as predicate.
+ - (4) The conversion also happens when the adjective follows <conjCate> or <conjCate4Forward> follows the adjective, and the coordination phrase acts as predicate.
  -     such as, "迷惘a、孤独a" => "迷惘a、孤独v" => "迷惘v、孤独v"
  -}
       a_P_SP = removeDup [(predCate, snd3 csp, thd3 csp) | csp <- csp2, cateEqual (fst3 csp) adjCate]
@@ -506,7 +506,7 @@ cateComb onOff pc1 pc2
           where
           csp_1 = removeDup [x| x<- csp1, cateEqual (fst3 x) adjCate]
       ctspaByaToCa = ctspaByaToCa_HaC
-      catesByaToCa = [(fst5 cate, "Ca/a-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaByaToCa]
+      catesByaToCa = [(fst5 cate, "Ca/a-" ++ snd5 cate, thd5 cate, "HaC", fif5 cate) | cate <- ctspaByaToCa]
 
 {- The conversion from adjective to noun happens when the adjective occupies AHn's or HnC's headword position.
  -}
@@ -522,18 +522,18 @@ cateComb onOff pc1 pc2
       catesByaToHn = [(fst5 cate, "Hn/a-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaByaToHn]
 
 {- The conversion from np/np to np happens when
- - (1) adjective words are followed by auxiliary word '的',
+ - (1*) adjective words are followed by auxiliary word '的',
  - (2) numeral words (with type np/np) have prefix (with type np/np) modification.
  -}
-      a_N_U1P = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp1, cateEqual (fst3 csp) adjCate]
-      ctspaByaToN_U1P = [rule cate1 cate2 | rule <- [appB], cate1 <- a_N_U1P, cate2 <- csp_2, elem Na onOff]
-          where
-          csp_2 = removeDup [x| x<-csp2, fst3 x == aux1Cate]
+--      a_N_U1P = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp1, cateEqual (fst3 csp) adjCate]
+--      ctspaByaToN_U1P = [rule cate1 cate2 | rule <- [appB], cate1 <- a_N_U1P, cate2 <- csp_2, elem Na onOff]
+--          where
+--          csp_2 = removeDup [x| x<-csp2, fst3 x == aux1Cate]
       a_N_HP = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp2, cateEqual (fst3 csp) adjCate]
       ctspaByaToN_HP = [rule cate1 cate2 | rule <- [appF], cate1 <- csp_1, cate2 <- a_N_HP, elem Na onOff]
           where
           csp_1 = removeDup [x| x<-csp1, fst3 x == prefixCate]
-      ctspaByaToN = ctspaByaToN_U1P ++ ctspaByaToN_HP
+      ctspaByaToN = ctspaByaToN_HP                               -- ctspaByaToN_U1P ++
       catesByaToN = [(fst5 cate, "N/a-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaByaToN]
 
 -- The conversion from noun to predicate is ONLY allowed when the noun acts as predicate or the headword of DHv.
@@ -863,11 +863,11 @@ cateComb onOff pc1 pc2
       ctspaBycToJf = ctspaBycToJf_CC
       catesBycToJf = [(fst5 cate, "Jf/c-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBycToJf]
 
-{- The conversion from conjunction type (X\X)/X to the backward conjunction's type X\X is ONLY allowed when it's at the end of a clause.
+{- The conversion from conjunction type (X\X)/X to the forward conjunction's type X/X is ONLY allowed when it's at the end of a clause.
  - or when it follows a prepositional phrase used as an adverbial, such as '为 荣誉 而 战'.
  -}
-      c_Jb_CC = removeDup [(conjCate4Backward, snd3 csp, thd3 csp) | csp <- csp2, fst3 csp == conjCate]
-      ctspaBycToJb_CC1 = [rule cate1 cate2 | rule <- [appB], cate1 <- csp_1, cate2 <- c_Jb_CC, elem Jbc onOff]
+      c_Jb_CC = removeDup [(conjCate4Forward, snd3 csp, thd3 csp) | csp <- csp2, fst3 csp == conjCate]
+      ctspaBycToJb_CC1 = [rule cate1 cate2 | rule <- [appB], cate1 <- csp_1, cate2 <- c_Jb_CC, elem Jfc onOff]
           where
           csp_1 = removeDup [x| x<- csp1, fst3 x == sCate]
       ctspaBycToJb_CC2 = [rule cate1 cate2 | rule <- [appB], cate1 <- csp_1, cate2 <- c_Jb_CC, elem Jbc onOff]

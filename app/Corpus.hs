@@ -152,7 +152,6 @@ posCate = [("n","np"),
            ("pa","((s/np)/np)/((s/np)/np)"),   -- 介词'把'的类型，宾语提前到动语前
            ("pb","(s/(s/np))/np"),             -- 介宾'被'的类型，宾语提取到主语前
            ("c","(X/X)/X"),                    -- 连词的典型类型，双向连词，分别通过Cb/c、Cf/c得到后向、前向连词。
-           ("cb","X/X"),                       -- 后向连词
            ("cf","X/X"),                       -- 前向连词
            ("u","(np/np)/np|((s/np)/(s/np))/(np/np)|((s/np)/(s/np))/(np/np)|((np/np)/(np/np))/((np/np)/(np/np))|(s/np)/(s/np)|(np/np)/(np/np)|X/X"),
            ("u1","(np/np)/np"),                -- 的
@@ -412,7 +411,7 @@ copyCate = do
             let sqlstat2 = DS.fromString $ "update " ++ sent_source ++ " set cate_sent2 = ? where serial_num = ?"
             oks <- executeMany conn sqlstat2 rows                   -- Update column cate_sent2 whose cate_check = 0.
 --            oks <- executeMany conn sqlstat2 (take 3500 rows)     -- Restricted by Network.Socket.sendbuf
-            putStrLn $ show (length oks) ++ " rows have been updated."            
+            putStrLn $ show (length oks) ++ " rows have been updated."
             close conn                                              -- Close the connection.
           else putStrLn "Command was cancelled."
 

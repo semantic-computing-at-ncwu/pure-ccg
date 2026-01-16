@@ -236,7 +236,7 @@ isKTerm _ = False
 
 -- Execute Axiom K on a term. If the term is a saturated combinator K, the K reduction is done. Otherwise, no changes happen to this term.
 kAxiom :: Term -> Term
-kAxiom (JuxTerm (JuxTerm (ConstTerm "K") x) y) = JuxTerm x y
+kAxiom (JuxTerm (JuxTerm (ConstTerm "K") x) y) = x
 kAxiom t = t
 
 -- Decide a term is a saturated combinator I or not, namely combinator I is followed by one term.
@@ -276,7 +276,7 @@ isCTerm _ = False
 
 -- Execute Axiom C on a term. If the term is a saturated combinator C, the C reduction is done. Otherwise, no changes happen to this term.
 cAxiom :: Term -> Term
-cAxiom (JuxTerm (JuxTerm (JuxTerm (ConstTerm "C") x) y) z) = JuxTerm x (JuxTerm z y)
+cAxiom (JuxTerm (JuxTerm (JuxTerm (ConstTerm "C") x) y) z) = JuxTerm (JuxTerm x z) y
 cAxiom t = t
 
 -- Decide a term is a saturated combinator W or not, namely combinator W is followed by two terms.
@@ -336,7 +336,7 @@ isVTerm _ = False
 
 -- Execute Axiom V on a term. If the term is a saturated combinator V, the V reduction is done. Otherwise, no changes happen to this term.
 vAxiom :: Term -> Term
-vAxiom (JuxTerm (JuxTerm (JuxTerm (ConstTerm "V") x) y) z) = JuxTerm z (JuxTerm x y)
+vAxiom (JuxTerm (JuxTerm (JuxTerm (ConstTerm "V") x) y) z) = JuxTerm (JuxTerm z x) y
 vAxiom t = t
 
 -- Decide a term is a saturated combinator S' or not, namely combinator S' is followed by three terms.
@@ -356,7 +356,7 @@ isRTerm _ = False
 
 -- Execute Axiom R on a term. If the term is a saturated combinator R, the R reduction is done. Otherwise, no changes happen to this term.
 rAxiom :: Term -> Term
-rAxiom (JuxTerm (JuxTerm (JuxTerm (ConstTerm "R") x) y) z) = JuxTerm y (JuxTerm z x)
+rAxiom (JuxTerm (JuxTerm (JuxTerm (ConstTerm "R") x) y) z) = JuxTerm (JuxTerm y z) x
 rAxiom t = t
 
 -- Decide a term is a saturated combinator A or not, namely combinator A is followed by two terms.

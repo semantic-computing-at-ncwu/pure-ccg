@@ -14,6 +14,7 @@ module Rule (
     raiF,     -- (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
     raiB,     -- (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
     raiB2,    -- (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
+    remF,     -- (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
     comFS,    -- (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
     comBS,    -- (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
     appFW,    -- (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
@@ -40,7 +41,7 @@ import Utils
 
 -- CCG rules constitute a functional list.
 rules :: [(Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)]
-rules = [appF, appB, comF, comB, comF2, comB2, raiF, raiB, raiB2, comFS, comBS, appFW, appBW]
+rules = [appF, appB, comF, comB, comF2, comB2, raiF, raiB, raiB2, remF, comFS, comBS, appFW, appBW]
 
 {- In parsing trees, every combination should print its corresponding rule tag.
  - Syntactic rules come from combinators in CL.
@@ -54,13 +55,13 @@ rules = [appF, appB, comF, comB, comF2, comB2, raiF, raiB, raiB2, comFS, comBS, 
  - Actually, combinators "T" and "B" compose multiple combinators, and it is more reasonable to translate "Combinatory" as "结合的".
  - On the other hand, one combinator can correspond two syntactic rules in CCG, such as "B", "B'", "R", and "C".
  - The second part of syntactic rules come from other usual combinators except the above, including
- -   [S, S', W, W']
+ -   [K, S, S', W, W']
  - It is possible that the second part of combinators are not used in real Chinese syntactic parsing.
- - Syntactic combinators: "A","T","B","B'","B3","B3'","R","C","U","S","S'","W","W'"
- - Syntactic rule tags: ">","<",">B","<B",">B2","<B2","T->B","T-<B","T-<B2",">S","<S",">W","<W"
+ - Syntactic combinators: "A","T","B","B'","B3","B3'","R","C","U","K","S","S'","W","W'"
+ - Syntactic rule tags: ">","<",">B","<B",">B2","<B2","T->B","T-<B","T-<B2",">K",">S","<S",">W","<W"
  -}
 ruleTags :: [Tag]
-ruleTags = [">","<",">B","<B",">B2","<B2","T->B","T-<B","T-<B2",">S","<S",">W","<W"]
+ruleTags = [">","<",">B","<B",">B2","<B2","T->B","T-<B","T-<B2",">K",">S","<S",">W","<W"]
 
 {- Combine two semantic components by given combinator and reduct at most 10 steps.
  - Semantics of word or phrase is considered as CL term. return reducted CL term.
@@ -98,14 +99,12 @@ appF cate1 cate2
     lca = leftCate ca1
     isAvail = midSlash ca1 == "/" && (rightCate ca1 == ca2 || rightCate ca1 == xCate)
 
-
 -- Backward application comes from combinator "T", taking the form of "Y X/Y -> X", while combinator T is used to combine two semantic components.
 appB :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 appB cate1 cate2
     | isPrimitive ca2 = (nilCate, "<", "", "", False)
     | ca2 == aux5Cate =  (ca1, "<", semComb "T" se1 se2, "U5P", True)
     | ca2 == toneCate = (ca1, "<", semComb "T" se1 se2, "TP", True)
-    | ca2 == conjCate4Backward = (ca1, "<", semComb "T" se1 se2, "CC", True)
     | isAvail && ca1 == numeralCate && ca2 == quantifierCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "MQ", True)
     | isAvail && ca1 == adjCate && ca2 == quantifierCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "PQ", True)
     | isAvail && ca1 == numeralCate && ca2 == adjCompCate && ps2 /= "HX" = (ca1, "<", semComb "T" se1 se2, "HmC", True)
@@ -128,7 +127,7 @@ appB cate1 cate2
     ca2 = fst3 cate2
     se2 = snd3 cate2
     ps2 = thd3 cate2
-    isAvail = midSlash ca2 == "\\" && (rightCate ca2 == ca1 || rightCate ca2 == xCate)
+    isAvail = midSlash ca2 == "/" && (rightCate ca2 == ca1 || rightCate ca2 == xCate)
 
 {- Forward composition, like X/Y Y/Z -> X/Z. Combinator B is used to combine two semantic components.
  - The rule is usually used for "adverbal + transitive verb" structure, and sometimes used for "PO+PO" structure, such as "从p 小学n 到p 中学n".
@@ -173,17 +172,17 @@ comB cate1 cate2
 comF2 :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 comF2 cate1 cate2
     | isPrimitive ca1 || isPrimitive ca2 = (nilCate, ">B2", "", "", False)
-    | isPrimitive (leftCate ca2) = (nilCate, ">B2", "", "", False)
-    | isAvail && ca2 == verbCate2 = (derivate (derivate (leftCate ca1) (midSlash lCate2) (rightCate lCate2)) (midSlash ca2) (rightCate ca2), ">B2", semComb "B3" se1 se2, "DHv", True)
-    | isAvail =  (derivate (derivate (leftCate ca1) (midSlash lCate2) (rightCate lCate2)) (midSlash ca2) (rightCate ca2), ">B2", semComb "B3" se1 se2, "NR", True)
+    | isPrimitive lcate2 = (nilCate, ">B2", "", "", False)
+    | isAvail && ca2 == verbCate2 = (derivate (derivate (leftCate ca1) (midSlash lcate2) (rightCate lcate2)) (midSlash ca2) (rightCate ca2), ">B2", semComb "B3" se1 se2, "DHv", True)
+    | isAvail =  (derivate (derivate (leftCate ca1) (midSlash lcate2) (rightCate lcate2)) (midSlash ca2) (rightCate ca2), ">B2", semComb "B3" se1 se2, "NR", True)
     | otherwise = (nilCate, ">B2", "", "", False)
     where
     ca1 = fst3 cate1
     se1 = snd3 cate1
     ca2 = fst3 cate2
     se2 = snd3 cate2
-    lCate2 = leftCate ca2
-    isAvail = midSlash ca1 == "/" && midSlash ca2 == "/" && midSlash lCate2 == "/" && rightCate ca1 == leftCate lCate2
+    lcate2 = leftCate ca2
+    isAvail = midSlash ca1 == "/" && midSlash ca2 == "/" && midSlash lcate2 == "/" && rightCate ca1 == leftCate lcate2
 
 {- Backward composition ^2, like (Y/Z)/W X/Y -> (X/Z)/W. Combinator B3' is used to combine two semantic components.
  - Scene 1: ((s/np)/np)/np  (s/np)/(s/np) -> ((s/np)/np)/np
@@ -208,7 +207,7 @@ raiF cate1 cate2
     | isPrimitive ca2 || isPrimitive lcate2 || isX lcate2 = (nilCate, "T->B", "", "", False)
     | isAvail && (ca2 == verbCate || ca2 == verbCate2) = (derivate (leftCate lcate2) (midSlash ca2) (rightCate ca2), "T->B", semComb "R" se1 se2, "OE", True)
     | isAvail && (ca2 == advCate || ca2 == baPhraseCate) = (derivate (leftCate lcate2) (midSlash ca2) (rightCate ca2), "T->B", semComb "R" se1 se2, "PE", True)
-    | isAvail = (derivate (leftCate lcate2) (midSlash ca2) (rightCate ca2), ">T->B", semComb "R" se1 se2, "NR", True)
+    | isAvail = (derivate (leftCate lcate2) (midSlash ca2) (rightCate ca2), "T->B", semComb "R" se1 se2, "NR", True)
     | otherwise = (nilCate, "T->B", "", "", False)
     where
     ca1 = fst3 cate1
@@ -227,7 +226,7 @@ raiB cate1 cate2
     | isPrimitive ca1 || isPrimitive lcate1 || isX lcate1 = (nilCate, "T-<B", "", "", False)
     | isAvail && ca1 == prep4BeiCate = (derivate (leftCate lcate1) (midSlash ca1) (rightCate ca1), "T-<B", semComb "C" se1 se2, "MOs", True)
     | isAvail = (derivate (leftCate lcate1) (midSlash ca1) (rightCate ca1), "T-<B", semComb "C" se1 se2, "NR", True)
-    | otherwise = (nilCate, "<T-<B", "", "", False)
+    | otherwise = (nilCate, "T-<B", "", "", False)
     where
     ca1 = fst3 cate1
     se1 = snd3 cate1
@@ -255,6 +254,18 @@ raiB2 cate1 cate2
     lcate1 = leftCate ca1
     llcate1 = leftCate lcate1
     isAvail = ca2 == rightCate llcate1
+
+-- Forward remove: X Y -> X. Combinator K is used to remove the second semantic component.
+remF :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
+remF cate1 cate2
+    | ca1 == adjCate && ca2 == aux1Cate = (ca1, ">K", semComb "K" se1 se2, ps1, True)
+    | otherwise = (nilCate, ">K", "", "", False)
+    where
+    ca1 = fst3 cate1
+    se1 = snd3 cate1
+    ps1 = thd3 cate1
+    ca2 = fst3 cate2
+    se2 = snd3 cate2
 
 -- Forward composition and substituition: (Z/Y)/X Y/X -> Z/X. Combinator S is used to combine two semantic components.
 comFS :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)

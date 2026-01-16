@@ -341,7 +341,8 @@ doParseSentByHumanMind username = do
                     if ok
                       then do                          -- Pass authentication!
                         conn <- getConn
-                        stmt <- prepareStmt conn "select cate_check, tree_check from corpus where serial_num = ?"
+                        let sqlstat = DS.fromString $ "select cate_check, tree_check from " ++ tree_target ++ " where serial_num = ?"
+                        stmt <- prepareStmt conn sqlstat
                         (defs, is) <- queryStmt conn stmt [toMySQLInt32 sn]            --([ColumnDef], InputStream [MySQLValue])
                         cate_tree_check <- S.read is
                         let cate_tree_check' = case cate_tree_check of
@@ -369,6 +370,7 @@ doParseSentByScript username = do
     let tree_source = getConfProperty "tree_source" confInfo                         -- Tree source
     let tree_target = getConfProperty "tree_target" confInfo                         -- Tree target
     let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+    let cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
     let syntax_ambig_resol_sample_update_switch = getConfProperty "syntax_ambig_resol_sample_update_switch" confInfo
     let category_ambig_resol_sample_update_switch = getConfProperty "category_ambig_resol_sample_update_switch" confInfo
 
@@ -376,6 +378,7 @@ doParseSentByScript username = do
     putStrLn $ " tree_source: " ++ tree_source
     putStrLn $ " tree_target: " ++ tree_target
     putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
+    putStrLn $ " cate_ambig_resol_model: " ++ cate_ambig_resol_model
     putStrLn $ " syntax_ambig_resol_sample_update_switch: " ++ syntax_ambig_resol_sample_update_switch
     putStrLn $ " category_ambig_resol_sample_update_switch: " ++ category_ambig_resol_sample_update_switch
 
@@ -587,10 +590,10 @@ doCountInTree username funcIndex = do
     confInfo <- readFile "Configuration"
     let tree_source = getConfProperty "tree_source" confInfo
     let phra_gram_dist_algo = getConfProperty "phra_gram_dist_algo" confInfo
-    let phrasyn = getConfProperty "phrasyn" confInfo
+    let phrasyn_model = getConfProperty "phrasyn_model" confInfo
     putStrLn $ " tree_source: " ++ tree_source
     putStrLn $ " phra_gram_dist_algo: " ++ phra_gram_dist_algo
-    putStrLn $ " phrasyn: " ++ phrasyn
+    putStrLn $ " phrasyn_model: " ++ phrasyn_model
 
     contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
     if contOrNot == "c"

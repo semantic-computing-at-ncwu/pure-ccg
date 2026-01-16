@@ -63,7 +63,6 @@ module Category (
     aux6Cate,             -- Category, "np/((s/np)/np)"
     toneCate,             -- Category, "X/X"
     conjCate,             -- Category, "(X/X)/X"
-    conjCate4Backward,    -- Category, "X/X"
     conjCate4Forward,     -- Category, "X/X"
     prefixCate,           -- Category, "np/np"
     postfixCate,          -- Category, "np/X"
@@ -396,10 +395,6 @@ toneCate = getCateFromString "X/X"
 -- Conjunction the left and the right.
 conjCate :: Category
 conjCate = getCateFromString "(X/X)/X"
-
--- Conjunction the left.
-conjCate4Backward :: Category
-conjCate4Backward = getCateFromString "X/X"
 
 -- Conjunction the right.
 conjCate4Forward :: Category

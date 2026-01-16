@@ -117,7 +117,7 @@ countInTree :: Int -> Int -> Int -> IO ()
 countInTree bottomSn topSn funcIndex = do
     conn <- getConn
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
-    let phrasyn = getConfProperty "phrasyn" confInfo
+    let phrasyn_model = getConfProperty "phrasyn_model" confInfo
     let tree_source = getConfProperty "tree_source" confInfo
     let sqlstat = DS.fromString $ "select tree from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
     stmt <- prepareStmt conn sqlstat
@@ -305,10 +305,10 @@ countInTree bottomSn topSn funcIndex = do
 -- To calculate similarities between every pair of Categories.
     if funcIndex == 12
        then do
-         let typePair2SimTuple = case phrasyn of
+         let typePair2SimTuple = case phrasyn_model of
                                    "phrasyn" -> getTypePair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfCate, NumOfCatePair, [((Category, Category), SimDeg)])
                                    "phrasyn0" -> getTypePair2SimFromSCPL0 sentClauPhraList
-                                   _ -> error $ "countInTree: Property " ++ phrasyn ++ " can not be recognized."
+                                   _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
          let typePair2SimList = fth4 typePair2SimTuple
          let sparseTypePair2SimList = [x | x <- typePair2SimList, snd x /= fromIntegral 0]
          putStrLn $ "countInTree: The number of different PhraSyns: " ++ show (fst4 typePair2SimTuple)
@@ -327,10 +327,10 @@ countInTree bottomSn topSn funcIndex = do
 -- To calculate similarities between every pair of grammatic rules.
     if funcIndex == 13
        then do
-         let tagPair2SimTuple = case phrasyn of
+         let tagPair2SimTuple = case phrasyn_model of
                                   "phrasyn" -> getTagPair2SimFromSCPL sentClauPhraList       -- (NumOfPhraSyn, NumOfPhraStru, NumOfStruPair, [((Tag, Tag), SimDeg)])
                                   "phrasyn0" -> getTagPair2SimFromSCPL0 sentClauPhraList     -- (NumOfPhraSyn, NumOfPhraStru, NumOfStruPair, [((Tag, Tag), SimDeg)])
-                                  _ -> error $ "countInTree: Property " ++ phrasyn ++ " can not be recognized."
+                                  _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
          let tagPair2SimList = fth4 tagPair2SimTuple
          let sparseTagPair2SimList = [x | x <- tagPair2SimList, snd x /= fromIntegral 0]
          putStrLn $ "countInTree: The number of different PhraSyns: " ++ show (fst4 tagPair2SimTuple)
@@ -349,10 +349,10 @@ countInTree bottomSn topSn funcIndex = do
 -- To calculate similarities between every pair of phrasal structures.
     if funcIndex == 14
        then do
-         let struPair2SimTuple = case phrasyn of
+         let struPair2SimTuple = case phrasyn_model of
                                    "phrasyn" -> getStruPair2SimFromSCPL sentClauPhraList       -- (NumOfPhraSyn, NumOfPhraStru, NumOfStruPair, [((PhraStru, PhraStru), SimDeg)])
                                    "phrasyn0" -> getStruPair2SimFromSCPL0 sentClauPhraList     -- (NumOfPhraSyn, NumOfPhraStru, NumOfStruPair, [((PhraStru, PhraStru), SimDeg)])
-                                   _ -> error $ "countInTree: Property " ++ phrasyn ++ " can not be recognized."
+                                   _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
          let struPair2SimList = fth4 struPair2SimTuple
          let sparseStruPair2SimList = [x | x <- struPair2SimList, snd x /= fromIntegral 0]
          putStrLn $ "countInTree: The number of different PhraSyns: " ++ show (fst4 struPair2SimTuple)
