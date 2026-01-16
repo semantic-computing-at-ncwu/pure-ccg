@@ -32,12 +32,12 @@ dependencies:
 - directory
 - time
 - random
-- hmatrix
-- hmatrix-gsl
 - massiv
 - streaming
 - cassava
 - regex-posix
+- hmatrix
+- hmatrix-gsl
 
 library:
   source-dirs: src

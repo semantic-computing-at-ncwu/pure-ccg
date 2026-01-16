@@ -156,7 +156,7 @@ sndTerm _ = Nothing
 
 {- Subterms of a term are recursively defined as follows.
  - (s1) M is a subterm of M;
- - (s2)	if M is a subterm of N or of P, then M is a subterm of NP.
+ - (s2)	if M is a subterm of N or of P, then M is a subterm of (NP).
  -}
 subTermOfTerm :: Term -> [Term]
 subTermOfTerm (ConstTerm t) = [ConstTerm t]
@@ -403,7 +403,7 @@ uAxiom t = t
 termSeq2Term :: [Term] -> Term
 termSeq2Term [] = nullTerm
 termSeq2Term [x] = x
-termSeq2Term (x:xs) = JuxTerm (x) (termSeq2Term xs)
+termSeq2Term xs = JuxTerm (termSeq2Term (init xs)) (last xs)
 
 {- Suppose the well-formated string of a term is strict, namely not including any redundant space character.
  - (1) A null string is well-formatted;

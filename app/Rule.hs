@@ -111,7 +111,7 @@ appB cate1 cate2
 --    | isAvail && ca1 == pronCate4Numeral && ca2 == quantifierCate = (leftCate ca2, "<", semComb "T" se1 se2, "PQ", True)
     | isAvail && ca2 == aux1Cate = (leftCate ca2, "<", semComb "T" se1 se2, "U1P", True)
     | isAvail && ca2 == aux2Cate = (leftCate ca2, "<", semComb "T" se1 se2, "U2P", True)
-    | isAvail && ca1 == adjCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "HaC", True)
+    | isAvail && ca1 == adjCate && ps2 /= "HX" && ca2 /= conjCate && ca2 /= conjCate4Forward = (leftCate ca2, "<", semComb "T" se1 se2, "HaC", True)
     | isAvail && cateEqual ca2 predCate = (leftCate ca2, "<", semComb "T" se1 se2, "SP", True)
     | isAvail && ca1 == npCate && ca2 == nounCompCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "HnC", True)
     | isAvail && ca2 == verbCompCate = (leftCate ca2, "<", semComb "T" se1 se2, "HvC", True)

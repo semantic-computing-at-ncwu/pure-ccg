@@ -10,7 +10,6 @@ module MyTest (
 import Prelude hiding (lookup)
 import Data.Map hiding (map)
 import Data.List
-import Numeric.LinearAlgebra as LA
 import qualified System.IO.Streams as S
 import Data.Time.Clock
 import Data.CSV as CSV
