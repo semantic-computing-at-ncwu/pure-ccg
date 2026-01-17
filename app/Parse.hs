@@ -68,13 +68,13 @@ cateComb onOff pc1 pc2
    S/s, P/s, O/s, A/s, Hn/s, N/s,
    S/v, O/v, A/v, Hn/v, D/v, Cn/v, Cv/v, N/v,
    P/vt, OE/vt, Vt/vi, A/vd,
-   S/a, P/a, V/a, O/a, D/a, Da/a, Cn/a, Cv/a, Ca/a, Hn/a, N/a,
+   S/a, P/a, V/a, O/a, D/a, Da/a, Cv/a, Ca/a, Hn/a, N/a,
    P/n, V/n, A/n, Cn/n, Cv/n, D/n, Da/n, ADJ/n,
    S/nd, O/nd, Hn/nd,
-   S/d, O/d, A/d, Hn/d, Cv/d, N/d, Da/d, Ds/d, Dx/d, Doe/d,
+   S/d, O/d, A/d, Hn/d, N/d, Da/d, Ds/d,
    D/p,
    O/oe, Hn/oe, N/oe,
-   N/pe, A/q, Jf/c, Jb/c, U3d/u3.
+   N/pe, A/q, Jf/c, U3d/u3.
    Besides, two adjacent syntactic types can convert to their new types respectively and simultaneously,
    such as "np np/.np -> np/.np np" noted as A/n-Hn/a. When used with some standard rules, two-typed combination is
    labelled as "N/v-"++<tag>, "A/v-"++<tag>, and so on. Now, type conversions only happen in
@@ -476,19 +476,6 @@ cateComb onOff pc1 pc2
       ctspaByaToDa = ctspaByaToDa_DHa
       catesByaToDa = [(fst5 cate, "Da/a-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaByaToDa]
 
-{- The category conversion from np/np to np/np happens when a (measured) numeral occupies completment position.
- - Conversion from adjCate to nounCompCate is not necessary.
- -}
-      a_Cn_HnC = removeDup [(nounCompCate, snd3 csp, thd3 csp) | csp <- csp_2]
-          where
-          csp_2 = removeDup [x| x <- csp2, elem True (map (\y-> cateEqual y (fst3 x)) [adjCate, numeralCate])]
-      ctspaByaToCn_HnC = [rule cate1 cate2 | rule <- [appB], cate1 <- csp_1, cate2 <- a_Cn_HnC, elem Cna onOff]
-          where
-          csp_1 = removeDup [x| x<- csp1, fst3 x == npCate]
-
-      ctspaByaToCn = ctspaByaToCn_HnC
-      catesByaToCn = [(fst5 cate, "Cn/a-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaByaToCn]
-
 -- The category conversion from np/np to (s/np)/(s/np) happens when the adjective occupies completment position.
       a_Cv_HvC = removeDup [(verbCompCate, snd3 csp, thd3 csp) | csp <- csp2, cateEqual (fst3 csp) adjCate]
       ctspaByaToCv_HvC = [rule cate1 cate2 | rule <- [appB,comB], cate1 <- csp_1, cate2 <- a_Cv_HvC, elem Cva onOff]
@@ -729,15 +716,6 @@ cateComb onOff pc1 pc2
       ctspaBydToHn = ctspaBydToHn_AHn ++ ctspaBydToHn_HnC
       catesBydToHn = [(fst5 cate, "Hn/d-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBydToHn]
 
-{- The conversion from verb-dverbial type (s/np)/(s/np) to the type of verb's complement (s/np)/(s/np) is NOT necessary.
- -}
-      d_Cv_HvC = removeDup [(verbCompCate, snd3 csp, thd3 csp) | csp <- csp2, (fst3 csp) == advCate]
-      ctspaBydToCv_HvC = [rule cate1 cate2 | rule <- [appB,comB], cate1 <- csp_1, cate2 <- d_Cv_HvC, elem Cvd onOff]
-          where
-          csp_1 = removeDup [x| x<- csp1, elem True (map (\y-> cateEqual y (fst3 x)) vCate)]
-      ctspaBydToCv = ctspaBydToCv_HvC
-      catesBydToCv = [(fst5 cate, "Cv/d-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBydToCv]
-
 {- The conversion from adverbial type (s/np)/(s/np) to noun type np is ONLY allowed when an auxiliary word '的' follows.
  -}
       d_N_U1P = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp1, (fst3 csp) == advCate]
@@ -773,26 +751,6 @@ cateComb onOff pc1 pc2
           csp_2 = removeDup [x| x<- csp2, fst3 x == sCate]
       ctspaBydToDs = ctspaBydToDs_DHs
       catesBydToDs = [(fst5 cate, "Ds/d-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBydToDs]
-
-{- The conversion from verb-adverbial type (s/np)/(s/np) to directional verb-adverbial type (s/np)/(s/np) is NOT necessary.
- - Such as, 分(s/np)/np 不(s/np)/(s/np) 开(s/np)/(s/np) => 分(s/np)/np (不 开)(s/np)/(s/np)
- -}
-      d_Dx_DHx = removeDup [(advCate4DirecVerb, snd3 csp, thd3 csp) | csp <- csp1, (fst3 csp) == advCate]
-      ctspaBydToDx_DHx = [rule cate1 cate2 | rule <- [comF], cate1 <- d_Dx_DHx, cate2 <- csp_2, elem Dxd onOff]
-          where
-          csp_2 = removeDup [x| x<- csp2, fst3 x == verbCompCate]
-      ctspaBydToDx = ctspaBydToDx_DHx
-      catesBydToDx = [(fst5 cate, "Dx/d-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBydToDx]
-
-{- The conversion from verb-adverbial type (s/np)/(s/np) to object extraction-adverbial type (s/np)/(s/np) is NOT necessary.
- - Such as, 最近(s/np)/(s/np) 他np 说(s/np)/np 的 => 最近(s/np)/(s/np) (他 说)s/np 的=> (最近 (他 说))s/np 的
- -}
-      d_Doe_DHoe = removeDup [(advCate4OE, snd3 csp, thd3 csp) | csp <- csp1, (fst3 csp) == advCate]
-      ctspaBydToDoe_DHoe = [rule cate1 cate2 | rule <- [appF], cate1 <- d_Doe_DHoe, cate2 <- csp_2, elem Doed onOff]
-          where
-          csp_2 = removeDup [x| x<- csp2, fst3 x == objectExtractionCate]
-      ctspaBydToDoe = ctspaBydToDoe_DHoe
-      catesBydToDoe = [(fst5 cate, "Doe/d-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBydToDoe]
 
 -- The conversion from preposition to adverbial is ONLY allowed when the noun following the preposition is elliptical (省略).
       p_D_DHv = removeDup [(advCate, snd3 csp, thd3 csp) | csp <- csp1, (fst3 csp) == prep2AdvCate]
@@ -862,19 +820,6 @@ cateComb onOff pc1 pc2
       ctspaBycToJf_CC = [rule cate1 cate2 | rule <- [appF], cate1 <- c_Jf_CC, cate2 <- csp2, elem Jfc onOff]
       ctspaBycToJf = ctspaBycToJf_CC
       catesBycToJf = [(fst5 cate, "Jf/c-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBycToJf]
-
-{- The conversion from conjunction type (X\X)/X to the forward conjunction's type X/X is ONLY allowed when it's at the end of a clause.
- - or when it follows a prepositional phrase used as an adverbial, such as '为 荣誉 而 战'.
- -}
-      c_Jb_CC = removeDup [(conjCate4Forward, snd3 csp, thd3 csp) | csp <- csp2, fst3 csp == conjCate]
-      ctspaBycToJb_CC1 = [rule cate1 cate2 | rule <- [appB], cate1 <- csp_1, cate2 <- c_Jb_CC, elem Jfc onOff]
-          where
-          csp_1 = removeDup [x| x<- csp1, fst3 x == sCate]
-      ctspaBycToJb_CC2 = [rule cate1 cate2 | rule <- [appB], cate1 <- csp_1, cate2 <- c_Jb_CC, elem Jbc onOff]
-          where
-          csp_1 = removeDup [x| x<- csp1, fst3 x == advCate]
-      ctspaBycToJb = ctspaBycToJb_CC1 ++ ctspaBycToJb_CC2
-      catesBycToJb = [(fst5 cate, "Jb/c-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBycToJb]
 
 {- The conversion from '得' typical type ((s/np)/(s/np))/(np/np) to its non-typical type ((np/np)/(np/np))/((np/np)/(np/np)" is ONLY allowed when
  - an adjective-adverbial follows, such as, 好a 得u 很d.
@@ -997,15 +942,15 @@ cateComb onOff pc1 pc2
       cates = catesBasic ++ catesBysToS ++ catesBysToP ++ catesBysToO ++ catesBysToA ++ catesBysToHn ++ catesBysToN
         ++ catesByvToS ++ catesByvToO ++ catesByvToA ++ catesByvToHn ++ catesByvToD ++ catesByvToCn ++ catesByvToCv ++ catesByvToN
         ++ catesByvtToP ++ catesByvtToOE ++ catesByviToVt ++ catesByvdToA
-        ++ catesByaToS ++ catesByaToP ++ catesByaToV ++ catesByaToO ++ catesByaToD ++ catesByaToDa ++ catesByaToCn ++ catesByaToCv ++ catesByaToCa ++ catesByaToHn ++ catesByaToN
+        ++ catesByaToS ++ catesByaToP ++ catesByaToV ++ catesByaToO ++ catesByaToD ++ catesByaToDa ++ catesByaToCv ++ catesByaToCa ++ catesByaToHn ++ catesByaToN
         ++ catesBynToP ++ catesBynToV ++ catesBynToA ++ catesBynToCn ++ catesBynToCv ++ catesBynToD ++ catesBynToDa ++ catesBynToADJ
         ++ catesByndToS ++ catesByndToO ++ catesByndToHn
-        ++ catesBydToS ++ catesBydToO ++ catesBydToA ++ catesBydToHn ++ catesBydToCv ++ catesBydToN ++ catesBydToADJ ++ catesBydToDa ++ catesBydToDs ++ catesBydToDx ++ catesBydToDoe
+        ++ catesBydToS ++ catesBydToO ++ catesBydToA ++ catesBydToHn ++ catesBydToN ++ catesBydToADJ ++ catesBydToDa ++ catesBydToDs
         ++ catesBypToD
         ++ catesByoeToO ++ catesByoeToHn ++ catesByoeToN
         ++ catesBypeToN
         ++ catesByqToA
-        ++ catesBycToJf ++ catesBycToJb
+        ++ catesBycToJf
         ++ catesByu3ToU3d
         ++ catesBysToS_aToP ++ catesBysToA_vToHn ++ catesBysToA_dToHn ++ catesBysToHn_nToCn
         ++ catesBynToV_vToO ++ catesBynToA_sToHn ++ catesBynToA_aToHn ++ catesBynToA_vToHn ++ catesBynToA_dToHn ++ catesBynToDa_vToA

@@ -50,6 +50,7 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    - -w
     dependencies:
     - pure-ccg
 

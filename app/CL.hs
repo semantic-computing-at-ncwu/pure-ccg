@@ -469,13 +469,14 @@ oneStepReduct (ConstTerm t) = (ConstTerm t, False)
 oneStepReduct (VarTerm t) = (VarTerm t, False)
 oneStepReduct (JuxTerm t1 t2)
     | flag == True = (res, flag)
-    | flag1 == True = (JuxTerm (res1) t2, flag1)
-    | flag2 == True = (JuxTerm t1 (res2), flag2)
+    | flag1 == True = (JuxTerm res1 t2, flag1)
+    | flag2 == True = (JuxTerm t1 res2, flag2)
     | otherwise = (JuxTerm t1 t2, False)
     where
       (res, flag) = doCombAxiom (JuxTerm t1 t2)
-      (res1, flag1) = doCombAxiom t1
-      (res2, flag2) = doCombAxiom t2
+      (res1, flag1) = oneStepReduct t1
+      (res2, flag2) = oneStepReduct t2
+
 
 {- Reduct a term till there is no redex inside it, or a maximal number of reduction steps is reached.
  - Even if a term has a normal form, reducting this term might not terminate.

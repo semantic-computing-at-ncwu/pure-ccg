@@ -475,7 +475,7 @@ doTrans clauTag onOff nPCs banPCSets = do
                 putStrLn "  S/v, O/v, A/v, Hn/v, D/v, Cn/v, Cv/v, N/v, P/vt, OE/vt, Vt/vi, A/vd,"
                 putStrLn "  S/a, P/a, V/a, O/a, D/a, Da/a, Cn/a, Cv/a, Ca/a, Hn/a, N/a,"
                 putStrLn "  P/n, V/n, A/n, Cn/n, Cv/n, D/n, Da/n, ADJ/n, S/nd, O/nd, Hn/nd,"
-                putStrLn "  S/d, O/d, A/d, Hn/d, Cv/d, N/d, ADJ/d, Da/d, Ds/d, Dx/d, Doe/d,"
+                putStrLn "  S/d, O/d, A/d, Hn/d, N/d, ADJ/d, Da/d, Ds/d, Dx/d, Doe/d,"
                 putStrLn "  D/p,"
                 putStrLn "  O/oe, Hn/oe, N/oe,"
                 putStrLn "  N/pe,"
@@ -490,7 +490,7 @@ doTrans clauTag onOff nPCs banPCSets = do
                   "S/v", "O/v", "A/v", "Hn/v", "D/v", "Cn/v", "Cv/v", "N/v", "P/vt", "OE/vt", "Vt/vi", "A/vd",
                   "S/a", "O/a", "Hn/a", "N/a", "P/a", "V/a", "D/a", "Da/a", "Cv/a", "Cn/a", "Ca/a",
                   "P/n", "V/n", "A/n", "Cn/n", "Cv/n", "D/n", "Da/n", "ADJ/n", "S/nd", "O/nd", "Hn/nd",
-                  "S/d", "O/d", "A/d", "Hn/d", "Cv/d", "N/d", "ADJ/d", "Da/d", "Ds/d", "Dx/d", "Doe/d",
+                  "S/d", "O/d", "A/d", "Hn/d", "N/d", "ADJ/d", "Da/d", "Ds/d", "Dx/d", "Doe/d",
                   "D/p",
                   "O/oe", "Hn/oe", "N/oe",
                   "N/pe",
@@ -1559,6 +1559,7 @@ ambiResolByPrevOverPair currentOverPairs (pcp:pcps) prevOverPairs
  - if rp belongs to banPCs but lp does not, then we get (lp, rp, Lp).
  - if both lp and rp belong to banPCs, then we get (lp, rp, Noth).
  - if both lp and rp do not belong to banPCs, then the ambiguity resolution for this pair of phrases is skipped.
+ - When deciding a phrase is in given banned phrasal set, its attributes Act and Seman are neglected.
  -}
 ambiResolByScript :: [PhraCate] -> [OverPair] -> [(PhraCate, PhraCate)] -> Script -> [OverPair]
 ambiResolByScript _ overPairs [] _ = overPairs
@@ -2862,7 +2863,7 @@ doTransWithManualResol clauTag onOff nPCs banPCSets prevOverPairs = do
         putStrLn "  S/v, O/v, A/v, Hn/v, D/v, Cn/v, Cv/v, N/v, P/vt, OE/vt, Vt/vi, A/vd,"
         putStrLn "  S/a, P/a, V/a, O/a, D/a, Da/a, Cn/a, Cv/a, Ca/a, Hn/a, N/a,"
         putStrLn "  P/n, V/n, A/n, Cn/n, Cv/n, D/n, Da/n, ADJ/n, S/nd, O/nd, Hn/nd,"
-        putStrLn "  S/d, O/d, A/d, Hn/d, Cv/d, N/d, ADJ/d, Da/d, Ds/d, Dx/d, Doe/d,"
+        putStrLn "  S/d, O/d, A/d, Hn/d, N/d, ADJ/d, Da/d, Ds/d, Dx/d, Doe/d,"
         putStrLn "  D/p,"
         putStrLn "  O/oe, Hn/oe, N/oe,"
         putStrLn "  N/pe,"
@@ -2877,7 +2878,7 @@ doTransWithManualResol clauTag onOff nPCs banPCSets prevOverPairs = do
           "S/v", "O/v", "A/v", "Hn/v", "D/v", "Cn/v", "Cv/v", "N/v", "P/vt", "OE/vt", "Vt/vi", "A/vd",
           "S/a", "O/a", "Hn/a", "N/a", "P/a", "V/a", "D/a", "Da/a", "Cv/a", "Cn/a", "Ca/a",
           "P/n", "V/n", "A/n", "Cn/n", "Cv/n", "D/n", "Da/n", "ADJ/n", "S/nd", "O/nd", "Hn/nd",
-          "S/d", "O/d", "A/d", "Hn/d", "Cv/d", "N/d", "ADJ/d", "Da/d", "Ds/d", "Dx/d", "Doe/d",
+          "S/d", "O/d", "A/d", "Hn/d", "N/d", "ADJ/d", "Da/d", "Ds/d", "Dx/d", "Doe/d",
           "D/p",
           "O/oe", "Hn/oe", "N/oe",
           "N/pe",
@@ -3001,7 +3002,7 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
     let rightOverTree = findATree rightOver nPCs                    -- BiTree PhraCate
 
     case syntax_ambig_resol_model of
-      x | elem x ["stru_gene3a_phrasyn0_202509"] -> do                -- Multimodel
+      x | isPrefixOf "stru_gene3a_phrasyn0_" x  -> do               -- Multimodel
 
         let lot = phraCateTree2PhraSyn0Tree leftOverTree      -- BiTree PhraSyn0
         let rot = phraCateTree2PhraSyn0Tree rightOverTree     -- BiTree PhraSyn0
@@ -3407,7 +3408,7 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
         closeStmt conn stmt
         close conn                                       -- Close MySQL connection.
 
-      _ -> error $ "updateSyntaxAmbiResolSample': syntax_ambig_resol_model " ++ syntax_ambig_resol_model ++ " is undefined."
+      _ -> error $ "updateSyntaxAmbiResolSample': syntax_ambig_resol_model = " ++ syntax_ambig_resol_model ++ " is undefined."
 
 {- Add the parsing result of a clause into treebank designated by <Configuration>.
  - Now, parameter <clauIdx> has not been used for checking.

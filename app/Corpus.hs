@@ -635,10 +635,9 @@ readRule str
     | str == "D/a" = Da        -- a5
     | str == "Da/a" = Daa      -- a6
     | str == "Ca/a" = Caa      -- a7
-    | str == "Cn/a" = Cna      -- a8
-    | str == "Cv/a" = Cva      -- a9
-    | str == "Hn/a" = Hna      -- a10
-    | str == "N/a" = Na        -- a11
+    | str == "Cv/a" = Cva      -- a8
+    | str == "Hn/a" = Hna      -- a9
+    | str == "N/a" = Na        -- a10
     | str == "P/n" = Pn        -- n1
     | str == "V/n" = Vn        -- n2
     | str == "A/n" = An        -- n3
@@ -654,13 +653,10 @@ readRule str
     | str == "O/d" = Od        -- d2
     | str == "A/d" = Ad        -- d3
     | str == "Hn/d" = Hnd      -- d4
-    | str == "Cv/d" = Cvd      -- d5
-    | str == "N/d" = Nd        -- d6
-    | str == "ADJ/d" = ADJd    -- d7
-    | str == "Da/d" = Dad      -- d8
-    | str == "Ds/d" = Dsd      -- d9
-    | str == "Dx/d" = Dxd      -- d10
-    | str == "Doe/d" = Doed    -- d11
+    | str == "N/d" = Nd        -- d5
+    | str == "ADJ/d" = ADJd    -- d6
+    | str == "Da/d" = Dad      -- d7
+    | str == "Ds/d" = Dsd      -- d8
     | str == "D/p" = Dp        -- p1
     | str == "O/oe" = Ooe      -- oe1
     | str == "Hn/oe" = Hnoe     -- oe2
@@ -668,7 +664,6 @@ readRule str
     | str == "N/pe" = Npe      -- pe1
     | str == "A/q" = Aq        -- q1
     | str == "Jf/c" = Jfc      -- c1
-    | str == "Jb/c" = Jbc      -- c2
     | str == "U3d/u3" = U3du3  -- au1
     | otherwise = error "readRule: Input string is not recognized."
 

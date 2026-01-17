@@ -78,7 +78,7 @@ executable pure-ccg-exe
       Paths_pure_ccg
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -w
   build-depends:
       MissingH
     , base >=4.7 && <5

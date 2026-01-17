@@ -31,7 +31,7 @@ module Rule (
     showOnOff         -- [Rule] -> IO ()
     ) where
 
-import Data.List
+import Data.List (elemIndex)
 import Data.List.Utils
 import Data.Tuple.Utils
 import Category
@@ -82,7 +82,6 @@ appF cate1 cate2
     | isAvail && ca1 == adjCate = (leftCate ca1, ">", semComb "A" se1 se2, "AHn", True)
     | isAvail && (ca1 == verbCate || ca1 == verbCate2) = (lca, ">", semComb "A" se1 se2, "VO", True)
     | isAvail && (ca1 == advCate || ca1 == baPhraseCate) = (lca, ">", semComb "A" se1 se2, "DHv", True)
-    | isAvail && (ca1 == advCate || ca1 == predCate) = (lca, ">", semComb "A" se1 se2, "DHv", True)
     | isAvail && (ca1 == prep2AdvCate || ca1 == prep2CompCate) = (lca, ">", semComb "A" se1 se2, "PO", True)
     | isAvail && ca1 == advCate4Adj = (lca, ">", semComb "A" se1 se2, "DHa", True)
     | isAvail && (ca1 == aux3Cate || ca1 == aux3dCate) = (leftCate ca1, ">", semComb "A" se1 se2, "U3P", True)
@@ -258,7 +257,9 @@ raiB2 cate1 cate2
 -- Forward remove: X Y -> X. Combinator K is used to remove the second semantic component.
 remF :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 remF cate1 cate2
-    | ca1 == adjCate && ca2 == aux1Cate = (ca1, ">K", semComb "K" se1 se2, ps1, True)
+    | ca1 == adjCate && ca2 == aux1Cate = (ca1, ">K", semComb "K" se1 se2, ps1, True)    -- "美丽 的"
+    | ca1 == sCate && ca2 == conjCate = (ca1, ">K", semComb "K" se1 se2, ps1, True)      --
+    | ca1 == advCate && ca2 == conjCate = (ca1, ">K", semComb "K" se1 se2, ps1, True)    -- "为祖国 而"
     | otherwise = (nilCate, ">K", "", "", False)
     where
     ca1 = fst3 cate1
@@ -334,27 +335,27 @@ appBW cate1 cate2
 {- All tags of context-sensitive category-converted rules:
    (s1)S/s, (s2)P/s, (s3)O/s, (s4)A/s, (s5)Hn/s, (s6)N/s,
    (v1)S/v, (v2)O/v, (v3)A/v, (v4)Hn/v, (v5)D/v, (v6)Cn/v, (v7)Cv/v, (v8)N/v, (v9)P/vt, (v10)OE/vt, (v11)Vt/vi, (v12)A/vd,
-   (a1)S/a, (a2)P/a, (a3)V/a, (a4)O/a, (a5)D/a, (a6)Da/a, (a7)Cn/a, (a8)Cv/a, (a9)Ca/a, (a10)Hn/a, (a11)N/a,
+   (a1)S/a, (a2)P/a, (a3)V/a, (a4)O/a, (a5)D/a, (a6)Da/a, (a7)Cv/a, (a8)Ca/a, (a9)Hn/a, (a10)N/a,
    (n1)P/n, (n2)V/n, (n3)A/n, (n4)Cn/n, (n5)Cv/n, (n6)D/n, (n7)Da/n, (n8)ADJ/n, (n9)S/nd, (n10)O/nd, (n11)Hn/nd,
-   (d1)S/d, (d2)O/d, (d3)A/d, (d4)Hn/d, (d5)Cv/d, (d6)N/d, (d7)ADJ/d, (d8)Da/d, (d9)Ds/d, (d10)Dx/d, (d11)Doe/d,
+   (d1)S/d, (d2)O/d, (d3)A/d, (d4)Hn/d, (d5)N/d, (d6)ADJ/d, (d7)Da/d, (d8)Ds/d,
    (p1)D/p,
    (oe1)O/oe, (oe2)Hn/oe, (oe3)N/oe,
    (pe1)N/pe,
    (q1)A/q,
-   (c1)Jf/c, (c2)Jb/c,
+   (c1)Jf/c,
    (au1)U3d/u3
  -}
 
 ccTags = ["S/s","P/s","O/s","A/s","Hn/s","N/s",
           "S/v","O/v","A/v","Hn/v","D/v","Cn/v","Cv/v","N/v","P/vt","OE/vt","Vt/vi","A/vd",
-          "S/a","P/a","V/a","O/a","D/a","Da/a","Cn/a","Cv/a","Ca/a","Hn/a","N/a",
+          "S/a","P/a","V/a","O/a","D/a","Da/a","Cv/a","Ca/a","Hn/a","N/a",
           "P/n","V/n","A/n","Cn/n","Cv/n","D/n","Da/n","ADJ/n","S/nd","O/nd","Hn/nd",
-          "S/d","O/d","A/d","Hn/d","Cv/d","N/d","ADJ/d","Da/d","Ds/d","Dx/d","Doe/d",
+          "S/d","O/d","A/d","Hn/d","N/d","ADJ/d","Da/d","Ds/d",
           "D/p",
           "O/oe","Hn/oe","N/oe",
           "N/pe",
           "A/q",
-          "Jf/c","Jb/c",
+          "Jf/c",
           "U3d/u3"]
 
 {- The enumerated type Rule is for the tags of category-converted rules. Rule value throws away '/' because enumerated
@@ -363,18 +364,18 @@ ccTags = ["S/s","P/s","O/s","A/s","Hn/s","N/s",
 
 data Rule = Ss | Ps | Os | As | Hns | Ns
           | Sv | Ov | Av | Hnv | Dv | Cnv | Cvv | Nv | Pvt | OEvt | Vtvi | Avd
-          | Sa | Pa | Va | Oa | Da | Daa | Cna | Cva | Caa | Hna | Na
+          | Sa | Pa | Va | Oa | Da | Daa | Cva | Caa | Hna | Na
           | Pn | Vn | An | Cnn | Cvn | Dn | Dan | ADJn | Snd | Ond | Hnnd
-          | Sd | Od | Ad | Hnd | Cvd | Nd | ADJd | Dad | Dsd | Dxd | Doed
+          | Sd | Od | Ad | Hnd | Nd | ADJd | Dad | Dsd
           | Dp
           | Ooe | Hnoe | Noe
           | Npe
           | Aq
-          | Jfc | Jbc
+          | Jfc
           | U3du3 deriving (Eq, Ord, Read)
 
 lexRule :: [Rule]
-lexRule = [Ss, Ps, Os, As, Hns, Ns, Sv, Ov, Av, Hnv, Dv, Cnv, Cvv, Nv, Pvt, OEvt, Vtvi, Avd, Sa, Oa, Hna, Na, Pa, Va, Da, Daa, Cva, Cna, Caa, Pn, Vn, An, Cnn, Cvn, Dn, Dan, ADJn, Snd, Ond, Hnnd, Sd, Od, Ad, Hnd, Cvd, Nd, ADJd, Dad, Dsd, Dxd, Doed, Dp, Ooe, Hnoe, Noe, Npe, Aq, Jfc, Jbc, U3du3]
+lexRule = [Ss, Ps, Os, As, Hns, Ns, Sv, Ov, Av, Hnv, Dv, Cnv, Cvv, Nv, Pvt, OEvt, Vtvi, Avd, Sa, Oa, Hna, Na, Pa, Va, Da, Daa, Cva, Caa, Pn, Vn, An, Cnn, Cvn, Dn, Dan, ADJn, Snd, Ond, Hnnd, Sd, Od, Ad, Hnd, Nd, ADJd, Dad, Dsd, Dp, Ooe, Hnoe, Noe, Npe, Aq, Jfc, U3du3]
 
 -- Define how the tag of a category-converted rule shows as a letter string.
 instance Show Rule where
@@ -402,7 +403,6 @@ instance Show Rule where
     show Va = "V/a"
     show Da = "D/a"
     show Daa = "Da/a"
-    show Cna = "Cn/a"
     show Cva = "Cv/a"
     show Caa = "Ca/a"
     show Hna = "Hn/a"
@@ -422,13 +422,10 @@ instance Show Rule where
     show Od = "O/d"
     show Ad = "A/d"
     show Hnd = "Hn/d"
-    show Cvd = "Cv/d"
     show Nd = "N/d"
     show ADJd = "ADJ/d"
     show Dad = "Da/d"
     show Dsd = "Ds/d"
-    show Dxd = "Dx/d"
-    show Doed = "Doe/d"
     show Dp = "D/p"
     show Ooe = "O/oe"
     show Hnoe = "Hn/oe"
@@ -436,7 +433,6 @@ instance Show Rule where
     show Npe = "N/pe"
     show Aq = "A/q"
     show Jfc = "Jf/c"
-    show Jbc = "Jb/c"
     show U3du3 = "U3d/u3"
 
 -- Get a Rule value from its String value.
@@ -520,8 +516,6 @@ updateOnOff onOff rws
     | rw1 == "-D/a" = updateOnOff (ruleOff Da onOff) rwt
     | rw1 == "+Da/a" = updateOnOff (ruleOn Daa onOff) rwt
     | rw1 == "-Da/a" = updateOnOff (ruleOff Daa onOff) rwt
-    | rw1 == "+Cn/a" = updateOnOff (ruleOn Cna onOff) rwt
-    | rw1 == "-Cn/a" = updateOnOff (ruleOff Cna onOff) rwt
     | rw1 == "+Cv/a" = updateOnOff (ruleOn Cva onOff) rwt
     | rw1 == "-Cv/a" = updateOnOff (ruleOff Cva onOff) rwt
     | rw1 == "+Ca/a" = updateOnOff (ruleOn Caa onOff) rwt
@@ -572,8 +566,6 @@ updateOnOff onOff rws
     | rw1 == "-A/d" = updateOnOff (ruleOff Ad onOff) rwt
     | rw1 == "+Hn/d" = updateOnOff (ruleOn Hnd onOff) rwt
     | rw1 == "-Hn/d" = updateOnOff (ruleOff Hnd onOff) rwt
-    | rw1 == "+Cv/d" = updateOnOff (ruleOn Cvd onOff) rwt
-    | rw1 == "-Cv/d" = updateOnOff (ruleOff Cvd onOff) rwt
     | rw1 == "+N/d" = updateOnOff (ruleOn Nd onOff) rwt
     | rw1 == "-N/d" = updateOnOff (ruleOff Nd onOff) rwt
     | rw1 == "+ADJ/d" = updateOnOff (ruleOn ADJd onOff) rwt
@@ -582,14 +574,8 @@ updateOnOff onOff rws
     | rw1 == "-Da/d" = updateOnOff (ruleOff Dad onOff) rwt
     | rw1 == "+Ds/d" = updateOnOff (ruleOn Dsd onOff) rwt
     | rw1 == "-Ds/d" = updateOnOff (ruleOff Dsd onOff) rwt
-    | rw1 == "+Dx/d" = updateOnOff (ruleOn Dxd onOff) rwt
-    | rw1 == "-Dx/d" = updateOnOff (ruleOff Dxd onOff) rwt
-    | rw1 == "+Doe/d" = updateOnOff (ruleOn Doed onOff) rwt
-    | rw1 == "-Doe/d" = updateOnOff (ruleOff Doed onOff) rwt
     | rw1 == "+Jf/c" = updateOnOff (ruleOn Jfc onOff) rwt
     | rw1 == "-Jf/c" = updateOnOff (ruleOff Jfc onOff) rwt
-    | rw1 == "+Jb/c" = updateOnOff (ruleOn Jbc onOff) rwt
-    | rw1 == "-Jb/c" = updateOnOff (ruleOff Jbc onOff) rwt
     | rw1 == "+U3d/u3" = updateOnOff (ruleOn U3du3 onOff) rwt
     | rw1 == "-U3d/u3" = updateOnOff (ruleOff U3du3 onOff) rwt
     | otherwise = error $ "updateOnOff: Rule switch " ++ rw1 ++ " is not cognizable."
