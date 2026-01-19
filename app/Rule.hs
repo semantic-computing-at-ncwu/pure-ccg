@@ -102,19 +102,20 @@ appF cate1 cate2
 appB :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 appB cate1 cate2
     | isPrimitive ca2 = (nilCate, "<", "", "", False)
+    | ca1 == sCate && ca2 == toneCate = (ca1, "<", semComb "T" se1 se2, "TP", True)
     | ca2 == aux5Cate =  (ca1, "<", semComb "T" se1 se2, "U5P", True)
-    | ca2 == toneCate = (ca1, "<", semComb "T" se1 se2, "TP", True)
+    | ca2 == postfixCate = (npCate, "<", semComb "T" se1 se2, "KP", True)
     | isAvail && ca1 == numeralCate && ca2 == quantifierCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "MQ", True)
     | isAvail && ca1 == adjCate && ca2 == quantifierCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "PQ", True)
     | isAvail && ca1 == numeralCate && ca2 == adjCompCate && ps2 /= "HX" = (ca1, "<", semComb "T" se1 se2, "HmC", True)
 --    | isAvail && ca1 == pronCate4Numeral && ca2 == quantifierCate = (leftCate ca2, "<", semComb "T" se1 se2, "PQ", True)
     | isAvail && ca2 == aux1Cate = (leftCate ca2, "<", semComb "T" se1 se2, "U1P", True)
     | isAvail && ca2 == aux2Cate = (leftCate ca2, "<", semComb "T" se1 se2, "U2P", True)
+    | isAvail && ca1 == adjCate && ca2 == postfixCate = (npCate, "<", semComb "T" se1 se2, "KP", True)
     | isAvail && ca1 == adjCate && ps2 /= "HX" && ca2 /= conjCate && ca2 /= conjCate4Forward = (leftCate ca2, "<", semComb "T" se1 se2, "HaC", True)
     | isAvail && cateEqual ca2 predCate = (leftCate ca2, "<", semComb "T" se1 se2, "SP", True)
     | isAvail && ca1 == npCate && ca2 == nounCompCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "HnC", True)
-    | isAvail && ca2 == verbCompCate = (leftCate ca2, "<", semComb "T" se1 se2, "HvC", True)
-    | isAvail && ca2 == postfixCate = (npCate, "<", semComb "T" se1 se2, "KP", True)
+    | isAvail && ca2 == verbCompCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "HvC", True)
     | isAvail && ca2 == prep4BeiCate = (leftCate ca2, "<", semComb "T" se1 se2, "MOs", True)
     | isAvail && ps2 == "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "XX", True)
     | isAvail =  (leftCate ca2, "<", semComb "T" se1 se2, "NR", True)
@@ -134,7 +135,8 @@ appB cate1 cate2
 comF :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 comF cate1 cate2
     | isPrimitive ca1 || isPrimitive ca2 = (nilCate, ">B", "", "", False)
-    | isAvail && ca2 == verbCate || ca2 == verbCate2 || ca1 == baPhraseCate = (derivate (leftCate ca1) (midSlash ca2) (rightCate ca2), ">B", semComb "B" se1 se2, "DHv", True)
+    | isAvail && ca1 == prefixCate && ca2 == numeralCate = (numeralCate, ">B", semComb "B" se1 se2, "HP", True)
+    | isAvail && (ca2 == verbCate || ca2 == verbCate2 || ca1 == baPhraseCate) = (derivate (leftCate ca1) (midSlash ca2) (rightCate ca2), ">B", semComb "B" se1 se2, "DHv", True)
     | isAvail && ca1 == advCate && ca2 == advCate && ps1 == "PO" && ps2 == "PO" = (advCate, ">B", semComb "B" se1 se2, "PO", True)
     | isAvail && ca1 == advCate && ca2 == baPhraseCate = (baPhraseCate, ">B", semComb "B" se1 se2, "DHas", True)
     | isAvail && ca1 == advCate && ca2 == advCate = (advCate, ">B", semComb "B" se1 se2, "DHd", True)     -- 例，今天nt 下午nt
@@ -171,7 +173,7 @@ comB cate1 cate2
 comF2 :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 comF2 cate1 cate2
     | isPrimitive ca1 || isPrimitive ca2 = (nilCate, ">B2", "", "", False)
-    | isPrimitive lcate2 = (nilCate, ">B2", "", "", False)
+    | isPrimitive lcate2 || isX lcate2 = (nilCate, ">B2", "", "", False)
     | isAvail && ca2 == verbCate2 = (derivate (derivate (leftCate ca1) (midSlash lcate2) (rightCate lcate2)) (midSlash ca2) (rightCate ca2), ">B2", semComb "B3" se1 se2, "DHv", True)
     | isAvail =  (derivate (derivate (leftCate ca1) (midSlash lcate2) (rightCate lcate2)) (midSlash ca2) (rightCate ca2), ">B2", semComb "B3" se1 se2, "NR", True)
     | otherwise = (nilCate, ">B2", "", "", False)
@@ -188,7 +190,7 @@ comF2 cate1 cate2
  -}
 comB2 :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 comB2 cate1 cate2
-    | isPrimitive ca1 || isPrimitive ca2 || isPrimitive lcate1 = (nilCate, "<B2", "", "", False)
+    | isPrimitive ca1 || isPrimitive ca2 || isPrimitive lcate1 || isX lcate1 = (nilCate, "<B2", "", "", False)
     | isAvail && ca1 == verbCate2 && ca2 == verbCompCate = (ca1, "<B2", semComb "B3'" se1 se2, "HvC", True)
     | otherwise = (nilCate, "<Bx2", "", "", False)
     where
@@ -257,7 +259,7 @@ raiB2 cate1 cate2
 -- Forward remove: X Y -> X. Combinator K is used to remove the second semantic component.
 remF :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 remF cate1 cate2
-    | ca1 == adjCate && ca2 == aux1Cate = (ca1, ">K", semComb "K" se1 se2, ps1, True)    -- "美丽 的"
+    | ca1 == adjCate && ca2 == aux1Cate = (ca1, ">K", semComb "K" se1 se2, "U1P", True)    -- "美丽 的"
     | ca1 == sCate && ca2 == conjCate = (ca1, ">K", semComb "K" se1 se2, ps1, True)      --
     | ca1 == advCate && ca2 == conjCate = (ca1, ">K", semComb "K" se1 se2, ps1, True)    -- "为祖国 而"
     | otherwise = (nilCate, ">K", "", "", False)
@@ -271,7 +273,8 @@ remF cate1 cate2
 -- Forward composition and substituition: (Z/Y)/X Y/X -> Z/X. Combinator S is used to combine two semantic components.
 comFS :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 comFS cate1 cate2
-    | isPrimitive ca1 || isPrimitive lcate1 || isPrimitive ca2 = (nilCate, ">S", "", "", False)
+    | isPrimitive ca1 || isPrimitive lcate1 || isX lcate1 || isPrimitive ca2 = (nilCate, ">S", "", "", False)
+    | isAvail && ca1 == prep4BeiCate = (derivate (leftCate lcate1) (midSlash ca1) (rightCate ca1), ">S", semComb "S" se1 se2, "DHv", True)
     | isAvail = (derivate (leftCate lcate1) (midSlash ca1) (rightCate ca1), ">S", semComb "S" se1 se2, "NR", True)
     | otherwise = (nilCate, ">S", "", "", False)
     where
@@ -288,7 +291,7 @@ comFS cate1 cate2
 -- Backward composition and substituition: Y/X (Z/Y)/X -> Z/X. Combinator S' is used to combine two semantic components.
 comBS :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 comBS cate1 cate2
-    | isPrimitive ca1 || isPrimitive ca2 || isPrimitive lcate2 = (nilCate, "<S", "", "", False)
+    | isPrimitive ca1 || isPrimitive ca2 || isPrimitive lcate2 || isX lcate2 = (nilCate, "<S", "", "", False)
     | isAvail = (derivate (leftCate lcate2) (midSlash ca2) (rightCate ca1), "<S", semComb "S'" se1 se2, "NR", True)
     | otherwise = (nilCate, "<S", "", "", False)
     where
@@ -305,7 +308,7 @@ comBS cate1 cate2
 -- Forward application twice: (Y/X)/X X -> Y. Combinator W is used to combine two semantic components.
 appFW :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 appFW cate1 cate2
-    | isPrimitive ca1 || isPrimitive lcate1 = (nilCate, ">W", "", "", False)
+    | isPrimitive ca1 || isPrimitive lcate1 || isX lcate1 = (nilCate, ">W", "", "", False)
     | isAvail = (leftCate lcate1, ">W", semComb "W" se1 se2, "NR", True)
     | otherwise = (nilCate, ">W", "", "", False)
     where
@@ -320,7 +323,7 @@ appFW cate1 cate2
 -- Backward application twice: X (Y/X)/X -> Y. Combinator W' is used to combine two semantic components.
 appBW :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 appBW cate1 cate2
-    | isPrimitive ca2 || isPrimitive lcate2 = (nilCate, "<W", "", "", False)
+    | isPrimitive ca2 || isPrimitive lcate2 || isX lcate2 = (nilCate, "<W", "", "", False)
     | isAvail = (leftCate lcate2, "<W", semComb "W'" se1 se2, "NR", True)
     | otherwise = (nilCate, "<W", "", "", False)
     where

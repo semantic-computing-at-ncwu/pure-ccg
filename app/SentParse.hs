@@ -473,14 +473,14 @@ doTrans clauTag onOff nPCs banPCSets = do
                 putStrLn "Enable or disable rules among"
                 putStrLn "  S/s, P/s, O/s, A/s, Hn/s, N/s,"
                 putStrLn "  S/v, O/v, A/v, Hn/v, D/v, Cn/v, Cv/v, N/v, P/vt, OE/vt, Vt/vi, A/vd,"
-                putStrLn "  S/a, P/a, V/a, O/a, D/a, Da/a, Cn/a, Cv/a, Ca/a, Hn/a, N/a,"
+                putStrLn "  S/a, P/a, V/a, O/a, D/a, Da/a, Cv/a, Ca/a, Hn/a, N/a,"
                 putStrLn "  P/n, V/n, A/n, Cn/n, Cv/n, D/n, Da/n, ADJ/n, S/nd, O/nd, Hn/nd,"
-                putStrLn "  S/d, O/d, A/d, Hn/d, N/d, ADJ/d, Da/d, Ds/d, Dx/d, Doe/d,"
+                putStrLn "  S/d, O/d, A/d, Hn/d, N/d, ADJ/d, Da/d, Ds/d,"
                 putStrLn "  D/p,"
                 putStrLn "  O/oe, Hn/oe, N/oe,"
                 putStrLn "  N/pe,"
                 putStrLn "  A/q,"
-                putStrLn "  Jf/c, Jb/c"
+                putStrLn "  Jf/c"
                 putStrLn "  and U3d/u3,"
                 putStr "  for instance, +O/s, -A/v: (RETURN for skip) "
                 ruleSwitchStr <- getLine                    -- Get new onOff from input, such as "+O/s,-A/v"
@@ -488,14 +488,14 @@ doTrans clauTag onOff nPCs banPCSets = do
                 if [] == [x| x <- rws, notElem (head x) ['+','-'] || notElem (tail x) [
                   "S/s", "P/s", "O/s", "A/s", "Hn/s", "N/s",
                   "S/v", "O/v", "A/v", "Hn/v", "D/v", "Cn/v", "Cv/v", "N/v", "P/vt", "OE/vt", "Vt/vi", "A/vd",
-                  "S/a", "O/a", "Hn/a", "N/a", "P/a", "V/a", "D/a", "Da/a", "Cv/a", "Cn/a", "Ca/a",
+                  "S/a", "O/a", "Hn/a", "N/a", "P/a", "V/a", "D/a", "Da/a", "Cv/a", "Ca/a",
                   "P/n", "V/n", "A/n", "Cn/n", "Cv/n", "D/n", "Da/n", "ADJ/n", "S/nd", "O/nd", "Hn/nd",
-                  "S/d", "O/d", "A/d", "Hn/d", "N/d", "ADJ/d", "Da/d", "Ds/d", "Dx/d", "Doe/d",
+                  "S/d", "O/d", "A/d", "Hn/d", "N/d", "ADJ/d", "Da/d", "Ds/d",
                   "D/p",
                   "O/oe", "Hn/oe", "N/oe",
                   "N/pe",
                   "A/q",
-                  "Jf/c", "Jb/c",
+                  "Jf/c",
                   "U3d/u3"]]
                    then do
                      let newOnOff = updateOnOff onOff rws
@@ -2861,14 +2861,14 @@ doTransWithManualResol clauTag onOff nPCs banPCSets prevOverPairs = do
         putStrLn "Enable or disable rules among"
         putStrLn "  S/s, P/s, O/s, A/s, Hn/s, N/s,"
         putStrLn "  S/v, O/v, A/v, Hn/v, D/v, Cn/v, Cv/v, N/v, P/vt, OE/vt, Vt/vi, A/vd,"
-        putStrLn "  S/a, P/a, V/a, O/a, D/a, Da/a, Cn/a, Cv/a, Ca/a, Hn/a, N/a,"
+        putStrLn "  S/a, P/a, V/a, O/a, D/a, Da/a,Cv/a, Ca/a, Hn/a, N/a,"
         putStrLn "  P/n, V/n, A/n, Cn/n, Cv/n, D/n, Da/n, ADJ/n, S/nd, O/nd, Hn/nd,"
-        putStrLn "  S/d, O/d, A/d, Hn/d, N/d, ADJ/d, Da/d, Ds/d, Dx/d, Doe/d,"
+        putStrLn "  S/d, O/d, A/d, Hn/d, N/d, ADJ/d, Da/d, Ds/d,"
         putStrLn "  D/p,"
         putStrLn "  O/oe, Hn/oe, N/oe,"
         putStrLn "  N/pe,"
         putStrLn "  A/q,"
-        putStrLn "  Jf/c, Jb/c"
+        putStrLn "  Jf/c"
         putStrLn "  and U3d/u3,"
         putStr "  for instance, +O/s, -A/v: (RETURN for skip) "
         ruleSwitchStr <- getLine                              -- Get new onOff from input, such as "+O/s,-A/v"
@@ -2876,14 +2876,14 @@ doTransWithManualResol clauTag onOff nPCs banPCSets prevOverPairs = do
         if [] == [x| x <- rws, notElem (head x) ['+','-'] || notElem (tail x) [
           "S/s", "P/s", "O/s", "A/s", "Hn/s", "N/s",
           "S/v", "O/v", "A/v", "Hn/v", "D/v", "Cn/v", "Cv/v", "N/v", "P/vt", "OE/vt", "Vt/vi", "A/vd",
-          "S/a", "O/a", "Hn/a", "N/a", "P/a", "V/a", "D/a", "Da/a", "Cv/a", "Cn/a", "Ca/a",
+          "S/a", "O/a", "Hn/a", "N/a", "P/a", "V/a", "D/a", "Da/a", "Cv/a", "Ca/a",
           "P/n", "V/n", "A/n", "Cn/n", "Cv/n", "D/n", "Da/n", "ADJ/n", "S/nd", "O/nd", "Hn/nd",
-          "S/d", "O/d", "A/d", "Hn/d", "N/d", "ADJ/d", "Da/d", "Ds/d", "Dx/d", "Doe/d",
+          "S/d", "O/d", "A/d", "Hn/d", "N/d", "ADJ/d", "Da/d", "Ds/d",
           "D/p",
           "O/oe", "Hn/oe", "N/oe",
           "N/pe",
           "A/q",
-          "Jf/c", "Jb/c",
+          "Jf/c",
           "U3d/u3"]]
            then do
              let newOnOff = updateOnOff onOff rws
@@ -3593,14 +3593,14 @@ parseSentWithoutPruning sn rules cs = do
    of transition to be executed, the third parameter is [Rule] value, where
    Rule::= Ss | Ps | Os | As | Hns | Ns
         | Sv | Ov | Av | Hnv | Dv | Cnv | Cvv | Nv | Pvt | OEvt | Vtvi | Avd
-        | Sa | Pa | Va | Oa | Da | Daa | Cna | Cva | Caa | Hna | Na
+        | Sa | Pa | Va | Oa | Da | Daa | Cva | Caa | Hna | Na
         | Pn | Vn | An | Cnn | Cvn | Dn | Dan | ADJn | Snd | Ond | Hnnd
-        | Sd | Od | Ad | Hnd | Cvd | Nd | ADJd | Dad | Dsd | Dxd | Doed
+        | Sd | Od | Ad | Hnd | Nd | ADJd | Dad | Dsd
         | Dp
         | Ooe | Hnoe | Noe
         | Npe
         | Aq
-        | Jfc | Jbc
+        | Jfc
         | U3du3.
    The fourth parameter is word-category string of this clause.
  -}
