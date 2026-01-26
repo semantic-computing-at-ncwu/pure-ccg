@@ -42,8 +42,10 @@ tree_field:tree
 #   - tree_target:treebank_including_SLR_for_creating_stru_gene3_202508
 #   - tree_target:treebank_including_SLR_for_creating_stru_gene3a_202508
 #   - tree_target:treebank_including_SLR_for_creating_stru_gene3a_phrasyn0_202509
-#   - treebank_including_SLR_for_creating_stru_gene3a_phrasyn0_202601
-tree_target:corpus_pccg_manual
+#   - treebank_by_script_20260125
+#   - corpus_pccg_manual
+#tree_target:corpus_pccg_manual
+tree_target:treebank_by_script_20260125
 
 # Model of phrasal Syntax. Now two models are available: phrasyn0 and phrasyn
 # phrasyn0: (Category, Tag, PhraStru)
@@ -77,7 +79,7 @@ cate_ambig_resol_model:slr_corpus_202601
 # When NOT hope to update syntax or category ambiguity resolution samples in database, set this switch as Off.
 # Now, category ambiguity resolution model SLR samples are stored with treebank created by parsing with scripts.
 # Switch category_ambig_resol_sample_update_switch is NOT used at present.
-syntax_ambig_resol_sample_update_switch:On
+syntax_ambig_resol_sample_update_switch:Off
 category_ambig_resol_sample_update_switch:Off
 
 # Distance Algo. for phrasal grammar aspects, overlapping types, and StruGene contexts.
@@ -111,19 +113,19 @@ cate_resol_sample_startsn:1
 cate_resol_sample_endsn:350
 
 # Benchmark treebank
-benchmark_treebank:corpus
+benchmark_treebank:corpus_pccg_manual
 
 # Experimental treebank
 #experimental_treebank:treebank_by_SLR_identity_ph_euc_ot_euc_sg_euc_Sn001_200
 #experimental_treebank:treebank_by_identity_ph_euc_ot_euc_sg_euc_Sn301_400
 #experimental_treebank:treebank_including_SLR
-experimental_treebank:treebank_by_SLR_identity_ph_euc_ot_euc_sg_euc_Sn351_400_prod
+experimental_treebank:treebank_by_script_20260125
 
 # Experimental scripts associated with trees, created by a certain parsing algorithm.
 #experimental_script:treebank_by_SLR_identity_ph_euc_ot_euc_sg_euc_Sn001_200
-experimental_script:treebank_by_SLR_identity_ph_euc_ot_euc_sg_euc_Sn301_400_prod
 #experimental_script:treebank_by_identity_ph_euc_ot_euc_sg_euc_Sn301_400
 #experimental_script:treebank_including_SLR
+experimental_script:treebank_by_script_20260125
 
 # Definition for distance between two ambiguity resolution samples or between an ambiguity resolution sample and a cluster centre.
 # arithAdd: It's a distance-arithmetic method by arithmetic addition.

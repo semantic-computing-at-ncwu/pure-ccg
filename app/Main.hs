@@ -713,6 +713,10 @@ doSearchInTreebank username = do
 -- A3_1. Display search results from field 'tree' in table 'corpus'.
 doSearchInTree :: String -> Int -> IO ()
 doSearchInTree username funcIndex = do
+    confInfo <- readFile "Configuration"
+    let tree_source = getConfProperty "tree_source" confInfo
+    putStrLn $ " tree_source: " ++ tree_source           -- Display the source of parsing trees
+
     putStr "Please input the value of 'serial_num' of start sentence: "
     bottomSnStr <- getLine
     let bottomSn = read bottomSnStr :: Int

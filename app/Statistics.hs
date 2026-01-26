@@ -1092,7 +1092,6 @@ searchInTree bottomSn topSn funcIndex = do
     conn <- getConn
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
     let tree_source = getConfProperty "tree_source" confInfo
-    putStrLn $ "The source of parsing trees is set as: " ++ tree_source           -- Display the source of parsing trees
     let sqlstat = DS.fromString $ "select serial_num, tree from " ++ tree_source ++ " where serial_num >= ? and serial_num < ?"
     stmt <- prepareStmt conn sqlstat
     (defs, is) <- queryStmt conn stmt [toMySQLInt32 bottomSn, toMySQLInt32 topSn]

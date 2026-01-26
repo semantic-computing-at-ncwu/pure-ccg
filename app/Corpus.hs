@@ -175,7 +175,7 @@ posCate = [("n","np"),
            ("jvi","s/np"),
            ("jvt","(s/np)/np"),
            ("ja","np/np"),
-           ("h","np/np"),                           -- 阿、老、初、第
+           ("h","np/(np/np)"),                      -- 阿、老、初、第
            ("k","np/X"),                            -- 子、儿、（工作）者、（我）们、（新）式、（四年）制、
            ("g","np|s/np|(s/np)/np|np/np"),
            ("gn","np"),
@@ -191,7 +191,7 @@ posCate = [("n","np"),
            ("wu","")]
 
 {- To now, the recognizable phrasal structures are as following.
-   MQ: Numeral Quantifier phrase
+--   MQ: Numeral Quantifier phrase
    PQ: Pronoun Quantifier phrase, such as "这r 个q", "这r 筐q"
    XX: Juxtapostion phrase, such as "(和' 你') 我'"
    HX: Half juXtaposition phrase, such as "和' 你'"
@@ -204,10 +204,10 @@ posCate = [("n","np"),
    DHx: Adverbial-directioanl verb phrase
    DHoe: Adverbial-object extraction phrase, such as "最近d 他说oe 的 话"
    DHas: Adverbial-ba structure phrase, such as "甚至d 把他as 连上三级"
-   HaC: Adjective (headword)-complement phrase
+   HaC: Adjective (headword)-complement phrase, including numeral qualifier phrase (MQ) and numeral complement phrase (HmC)
    AHn: Attribute-noun (headword) phrase
    HnC: Noun (headword)-complement phrase
-   HmC: Numeral (headword)-complement phrase
+--   HmC: Numeral (headword)-complement phrase
    VO: Verb-object phrase
    OE: Object extraction phrase
    PE: Predicate extraction phrase, such as "我在力所能及的范围内，做好自己的工作。"
@@ -627,7 +627,6 @@ readRule str
     | str == "P/vt" = Pvt      -- v9
     | str == "OE/vt" = OEvt    -- v10
     | str == "Vt/vi" = Vtvi    -- v11
-    | str == "A/vd" = Avd      -- v12
     | str == "S/a" = Sa        -- a1
     | str == "P/a" = Pa        -- a2
     | str == "V/a" = Va        -- a3

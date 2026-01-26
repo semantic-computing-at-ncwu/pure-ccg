@@ -472,7 +472,7 @@ doTrans clauTag onOff nPCs banPCSets = do
       "n" -> do                         -- Press key 'n'
                 putStrLn "Enable or disable rules among"
                 putStrLn "  S/s, P/s, O/s, A/s, Hn/s, N/s,"
-                putStrLn "  S/v, O/v, A/v, Hn/v, D/v, Cn/v, Cv/v, N/v, P/vt, OE/vt, Vt/vi, A/vd,"
+                putStrLn "  S/v, O/v, A/v, Hn/v, D/v, Cn/v, Cv/v, N/v, P/vt, OE/vt, Vt/vi,"
                 putStrLn "  S/a, P/a, V/a, O/a, D/a, Da/a, Cv/a, Ca/a, Hn/a, N/a,"
                 putStrLn "  P/n, V/n, A/n, Cn/n, Cv/n, D/n, Da/n, ADJ/n, S/nd, O/nd, Hn/nd,"
                 putStrLn "  S/d, O/d, A/d, Hn/d, N/d, ADJ/d, Da/d, Ds/d,"
@@ -487,7 +487,7 @@ doTrans clauTag onOff nPCs banPCSets = do
                 let rws = splitAtDeliThrowSpace ',' ruleSwitchStr     -- ["+O/s","-A/v"]
                 if [] == [x| x <- rws, notElem (head x) ['+','-'] || notElem (tail x) [
                   "S/s", "P/s", "O/s", "A/s", "Hn/s", "N/s",
-                  "S/v", "O/v", "A/v", "Hn/v", "D/v", "Cn/v", "Cv/v", "N/v", "P/vt", "OE/vt", "Vt/vi", "A/vd",
+                  "S/v", "O/v", "A/v", "Hn/v", "D/v", "Cn/v", "Cv/v", "N/v", "P/vt", "OE/vt", "Vt/vi",
                   "S/a", "O/a", "Hn/a", "N/a", "P/a", "V/a", "D/a", "Da/a", "Cv/a", "Ca/a",
                   "P/n", "V/n", "A/n", "Cn/n", "Cv/n", "D/n", "Da/n", "ADJ/n", "S/nd", "O/nd", "Hn/nd",
                   "S/d", "O/d", "A/d", "Hn/d", "N/d", "ADJ/d", "Da/d", "Ds/d",
@@ -2860,7 +2860,7 @@ doTransWithManualResol clauTag onOff nPCs banPCSets prevOverPairs = do
       then do
         putStrLn "Enable or disable rules among"
         putStrLn "  S/s, P/s, O/s, A/s, Hn/s, N/s,"
-        putStrLn "  S/v, O/v, A/v, Hn/v, D/v, Cn/v, Cv/v, N/v, P/vt, OE/vt, Vt/vi, A/vd,"
+        putStrLn "  S/v, O/v, A/v, Hn/v, D/v, Cn/v, Cv/v, N/v, P/vt, OE/vt, Vt/vi,"
         putStrLn "  S/a, P/a, V/a, O/a, D/a, Da/a,Cv/a, Ca/a, Hn/a, N/a,"
         putStrLn "  P/n, V/n, A/n, Cn/n, Cv/n, D/n, Da/n, ADJ/n, S/nd, O/nd, Hn/nd,"
         putStrLn "  S/d, O/d, A/d, Hn/d, N/d, ADJ/d, Da/d, Ds/d,"
@@ -2875,7 +2875,7 @@ doTransWithManualResol clauTag onOff nPCs banPCSets prevOverPairs = do
         let rws = splitAtDeliThrowSpace ',' ruleSwitchStr     -- ["+O/s","-A/v"]
         if [] == [x| x <- rws, notElem (head x) ['+','-'] || notElem (tail x) [
           "S/s", "P/s", "O/s", "A/s", "Hn/s", "N/s",
-          "S/v", "O/v", "A/v", "Hn/v", "D/v", "Cn/v", "Cv/v", "N/v", "P/vt", "OE/vt", "Vt/vi", "A/vd",
+          "S/v", "O/v", "A/v", "Hn/v", "D/v", "Cn/v", "Cv/v", "N/v", "P/vt", "OE/vt", "Vt/vi",
           "S/a", "O/a", "Hn/a", "N/a", "P/a", "V/a", "D/a", "Da/a", "Cv/a", "Ca/a",
           "P/n", "V/n", "A/n", "Cn/n", "Cv/n", "D/n", "Da/n", "ADJ/n", "S/nd", "O/nd", "Hn/nd",
           "S/d", "O/d", "A/d", "Hn/d", "N/d", "ADJ/d", "Da/d", "Ds/d",
@@ -2963,6 +2963,11 @@ syntaxAmbiResolByManualResol' nPCs (lp, rp) = do
         putStr "Find structural fragment: "
         showStruFrag leps lp rp reps ot
       x | elem x ["stru_gene_202408", "stru_gene_202412", "stru_gene_202501"] -> do        -- Multimodel
+        let leps = getPhraByEnd (stOfCate lp - 1) nPCs        -- Get all left-extend phrases
+        let reps = getPhraByStart (enOfCate rp + 1) nPCs      -- Get all right-entend phrases
+        putStr "Find structural fragment: "
+        showStruFrag leps lp rp reps ot
+      x | isPrefixOf "stru_gene3a_phrasyn0_" x -> do          -- Multimodel
         let leps = getPhraByEnd (stOfCate lp - 1) nPCs        -- Get all left-extend phrases
         let reps = getPhraByStart (enOfCate rp + 1) nPCs      -- Get all right-entend phrases
         putStr "Find structural fragment: "
@@ -3592,7 +3597,7 @@ parseSentWithoutPruning sn rules cs = do
    parameter is the serial number of sentence which the clause is affiliated with, the second parameter is which trip
    of transition to be executed, the third parameter is [Rule] value, where
    Rule::= Ss | Ps | Os | As | Hns | Ns
-        | Sv | Ov | Av | Hnv | Dv | Cnv | Cvv | Nv | Pvt | OEvt | Vtvi | Avd
+        | Sv | Ov | Av | Hnv | Dv | Cnv | Cvv | Nv | Pvt | OEvt | Vtvi
         | Sa | Pa | Va | Oa | Da | Daa | Cva | Caa | Hna | Na
         | Pn | Vn | An | Cnn | Cvn | Dn | Dan | ADJn | Snd | Ond | Hnnd
         | Sd | Od | Ad | Hnd | Nd | ADJd | Dad | Dsd

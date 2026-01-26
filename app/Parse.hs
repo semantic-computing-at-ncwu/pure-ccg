@@ -67,7 +67,7 @@ cateComb onOff pc1 pc2
    of Chinese words, the following syntax-typed conversions exist,
    S/s, P/s, O/s, A/s, Hn/s, N/s,
    S/v, O/v, A/v, Hn/v, D/v, Cn/v, Cv/v, N/v,
-   P/vt, OE/vt, Vt/vi, A/vd,
+   P/vt, OE/vt, Vt/vi,
    S/a, P/a, V/a, O/a, D/a, Da/a, Cv/a, Ca/a, Hn/a, N/a,
    P/n, V/n, A/n, Cn/n, Cv/n, D/n, Da/n, ADJ/n,
    S/nd, O/nd, Hn/nd,
@@ -102,7 +102,7 @@ cateComb onOff pc1 pc2
 {- Use P/s only when
  - (1) subject-predicate structure appears at predicate position,
  - (2) subject-predicate structure occupies the head-word position of DHv,
- - (3) a phrase with a structure HX following,
+ - (3) a phrase with structure HX following,
  - (4) a phrase following a conjunction.
  -}
       s_P_SP = removeDup [(predCate, snd3 csp, thd3 csp) | csp <- csp2, fst3 csp == sCate]
@@ -355,15 +355,6 @@ cateComb onOff pc1 pc2
       ctspaByviToVt =  ctspaByviToVt_XX ++ ctspaByviToVt_VO ++ ctspaByviToVt_OE
       catesByviToVt = [(fst5 cate, "Vt/vi-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaByviToVt]
 
-{- The conversion from verb-complemented type to adjective type happens when
- - A directional verb follows the auxiliary word '得', such as "回vt 得u3 来vd".
- -}
-      vd_A = removeDup [(adjCate, snd3 csp, thd3 csp) | csp <- csp2, fst3 csp == verbCompCate]
-      ctspaByvdToA = [rule cate1 cate2 | rule <- [appF], cate1 <- csp_1, cate2 <- vd_A, elem Avd onOff]
-          where
-          csp_1 = removeDup [x| x <- csp1, fst3 x == aux3Cate]
-      catesByvdToA = [(fst5 cate, "A/vd-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaByvdToA]
-
 {- The conversion from adjective to noun happens when the adjective occupies subject position.
  -}
       a_S_SP = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp1, cateEqual (fst3 csp) adjCate]
@@ -509,18 +500,18 @@ cateComb onOff pc1 pc2
       catesByaToHn = [(fst5 cate, "Hn/a-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaByaToHn]
 
 {- The conversion from np/np to np happens when
- - (1*) adjective words are followed by auxiliary word '的',
+ - (1) adjective words are followed by auxiliary word '的',
  - (2) numeral words (with type np/np) have prefix (with type np/np) modification.
  -}
---      a_N_U1P = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp1, cateEqual (fst3 csp) adjCate]
---      ctspaByaToN_U1P = [rule cate1 cate2 | rule <- [appB], cate1 <- a_N_U1P, cate2 <- csp_2, elem Na onOff]
---          where
---          csp_2 = removeDup [x| x<-csp2, fst3 x == aux1Cate]
       a_N_HP = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp2, cateEqual (fst3 csp) adjCate]
       ctspaByaToN_HP = [rule cate1 cate2 | rule <- [appF], cate1 <- csp_1, cate2 <- a_N_HP, elem Na onOff]
           where
           csp_1 = removeDup [x| x<-csp1, fst3 x == prefixCate]
-      ctspaByaToN = ctspaByaToN_HP                               -- ctspaByaToN_U1P ++
+      a_N_U1P = removeDup [(npCate, snd3 csp, thd3 csp) | csp <- csp1, cateEqual (fst3 csp) adjCate]
+      ctspaByaToN_U1P = [rule cate1 cate2 | rule <- [appB], cate1 <- a_N_U1P, cate2 <- csp_2, elem Na onOff]
+          where
+          csp_2 = removeDup [x| x<-csp2, fst3 x == aux1Cate]
+      ctspaByaToN = ctspaByaToN_HP ++ ctspaByaToN_U1P
       catesByaToN = [(fst5 cate, "N/a-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaByaToN]
 
 -- The conversion from noun to predicate is ONLY allowed when the noun acts as predicate or the headword of DHv.
@@ -554,13 +545,19 @@ cateComb onOff pc1 pc2
       ctspaBynToV = ctspaBynToV_VO ++ ctspaBynToV_OE ++ ctspaBynToV_DHv
       catesBynToV = [(fst5 cate, "V/n-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBynToV]
 
-{- The conversion from 'np' to 'np/np' is ONLY allowed when a noun acts as an attribue.
+{- The conversion from 'np' to 'np/np' is ONLY allowed for
+ - (1) A noun acts as an attribue;
+ - (2) A prefix phrase structure (HP) acts as an numeral.
  -}
       n_A_AHn = removeDup [(adjCate, snd3 csp, thd3 csp) | csp <- csp1, (fst3 csp) == npCate]
       ctspaBynToA_AHn = [rule cate1 cate2 | rule <- [appF], cate1 <- n_A_AHn, cate2 <- csp_2, elem An onOff]
           where
           csp_2 = removeDup [x| x<- csp2, fst3 x == npCate]
-      ctspaBynToA = ctspaBynToA_AHn
+      n_A_MQ = removeDup [(adjCate, snd3 csp, thd3 csp) | csp <- csp1, (fst3 csp) == npCate]
+      ctspaBynToA_HaC = [rule cate1 cate2 | rule <- [appB], cate1 <- n_A_MQ, cate2 <- csp_2, elem An onOff]
+          where
+          csp_2 = removeDup [x| x<- csp2, fst3 x == quantifierCate]
+      ctspaBynToA = ctspaBynToA_AHn ++ ctspaBynToA_HaC
       catesBynToA = [(fst5 cate, "A/n-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBynToA]
 
 -- The conversion from noun to noun's completment is ONLY allowed when the noun acts as noun's completment.
@@ -691,13 +688,20 @@ cateComb onOff pc1 pc2
       ctspaBydToO = ctspaBydToO_VO ++ ctspaBydToO_PO
       catesBydToO = [(fst5 cate, "O/d-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBydToO]
 
-{- The conversion from verb-adverbial type (s/np)/(s/np) to attribue type np/np is ONLY allowed when a noun follows.
+{- The conversion from verb-adverbial or directional verb type (s/np)/(s/np) to attribue type np/np is ONLY allowed when
+ - (1) a noun follows;
+ - (2) follows auxiliary word '得', such as "回vt 得u3 来vd".
  -}
       d_A_AHn = removeDup [(adjCate, snd3 csp, thd3 csp) | csp <- csp1, (fst3 csp) == advCate]
       ctspaBydToA_AHn = [rule cate1 cate2 | rule <- [appF], cate1 <- d_A_AHn, cate2 <- csp_2, elem Ad onOff]
           where
           csp_2 = removeDup [x| x<- csp2, fst3 x == npCate]
-      ctspaBydToA = ctspaBydToA_AHn
+      d_A_U3P = removeDup [(adjCate, snd3 csp, thd3 csp) | csp <- csp2, fst3 csp == advCate]
+      ctspaBydToA_U3P = [rule cate1 cate2 | rule <- [appF], cate1 <- csp_1, cate2 <- d_A_U3P, elem Ad onOff]
+          where
+          csp_1 = removeDup [x| x <- csp1, fst3 x == aux3Cate]
+
+      ctspaBydToA = ctspaBydToA_AHn ++ ctspaBydToA_U3P
       catesBydToA = [(fst5 cate, "A/d-" ++ snd5 cate, thd5 cate, fth5 cate, fif5 cate) | cate <- ctspaBydToA]
 
 
@@ -941,7 +945,7 @@ cateComb onOff pc1 pc2
 -- The categories gotten by all rules.
       cates = catesBasic ++ catesBysToS ++ catesBysToP ++ catesBysToO ++ catesBysToA ++ catesBysToHn ++ catesBysToN
         ++ catesByvToS ++ catesByvToO ++ catesByvToA ++ catesByvToHn ++ catesByvToD ++ catesByvToCn ++ catesByvToCv ++ catesByvToN
-        ++ catesByvtToP ++ catesByvtToOE ++ catesByviToVt ++ catesByvdToA
+        ++ catesByvtToP ++ catesByvtToOE ++ catesByviToVt
         ++ catesByaToS ++ catesByaToP ++ catesByaToV ++ catesByaToO ++ catesByaToD ++ catesByaToDa ++ catesByaToCv ++ catesByaToCa ++ catesByaToHn ++ catesByaToN
         ++ catesBynToP ++ catesBynToV ++ catesBynToA ++ catesBynToCn ++ catesBynToCv ++ catesBynToD ++ catesBynToDa ++ catesBynToADJ
         ++ catesByndToS ++ catesByndToO ++ catesByndToHn

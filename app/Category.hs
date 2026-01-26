@@ -47,7 +47,7 @@ module Category (
     prep2CompCate, -- Category, "((s/np)/(s/np))/np"
     prep4BaCate,          -- Category, "((s/np)/np)/((s/np)/np)"
     prep4BeiCate,         -- Category, "(s/(s/np))/np"
-    verbCompCate,         -- Category, "(s/np)/(s/np)"
+    verbCompCate,         -- Category, "(s/np)/(s/np)", which is also directional verb's.
     nounCompCate,         -- Category, "np/np"
     adjCompCate,          -- Category, "(np/np)/(np/np)"
     numeralCate,          -- Category, "np/np"
@@ -64,7 +64,7 @@ module Category (
     toneCate,             -- Category, "X/X"
     conjCate,             -- Category, "(X/X)/X"
     conjCate4Forward,     -- Category, "X/X"
-    prefixCate,           -- Category, "np/np"
+    prefixCate,           -- Category, "np/(np/np)"
     postfixCate,          -- Category, "np/X"
     baPhraseCate,         -- Category, "((s/np)/((s/np)/np)"
     poPhraseCate          -- Category, "(s/np)/(s/np)"
@@ -402,7 +402,7 @@ conjCate4Forward = getCateFromString "X/X"
 
 -- Prefix words are '第'、'阿'、'初'
 prefixCate :: Category
-prefixCate = getCateFromString "np/np"
+prefixCate = getCateFromString "np/(np/np)"
 
 -- Postfix words are '者'、'们'、'性'、'儿'
 postfixCate :: Category

@@ -105,15 +105,16 @@ appB cate1 cate2
     | ca1 == sCate && ca2 == toneCate = (ca1, "<", semComb "T" se1 se2, "TP", True)
     | ca2 == aux5Cate =  (ca1, "<", semComb "T" se1 se2, "U5P", True)
     | ca2 == postfixCate = (npCate, "<", semComb "T" se1 se2, "KP", True)
-    | isAvail && ca1 == numeralCate && ca2 == quantifierCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "MQ", True)
-    | isAvail && ca1 == adjCate && ca2 == quantifierCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "PQ", True)
-    | isAvail && ca1 == numeralCate && ca2 == adjCompCate && ps2 /= "HX" = (ca1, "<", semComb "T" se1 se2, "HmC", True)
---    | isAvail && ca1 == pronCate4Numeral && ca2 == quantifierCate = (leftCate ca2, "<", semComb "T" se1 se2, "PQ", True)
+    | isAvail && ca1 == adjCate && ca2 == adjCompCate = (ca1, "<", semComb "T" se1 se2, "HaC", True)
+--    | isAvail && ca1 == numeralCate && ca2 == quantifierCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "MQ", True)
+--    | isAvail && ca1 == adjCate && ca2 == quantifierCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "PQ", True)      -- Unrecognizeable now
+--    | isAvail && ca1 == numeralCate && ca2 == adjCompCate && ps2 /= "HX" = (ca1, "<", semComb "T" se1 se2, "HmC", True)             -- Unrecognizeable now
     | isAvail && ca2 == aux1Cate = (leftCate ca2, "<", semComb "T" se1 se2, "U1P", True)
     | isAvail && ca2 == aux2Cate = (leftCate ca2, "<", semComb "T" se1 se2, "U2P", True)
     | isAvail && ca1 == adjCate && ca2 == postfixCate = (npCate, "<", semComb "T" se1 se2, "KP", True)
     | isAvail && ca1 == adjCate && ps2 /= "HX" && ca2 /= conjCate && ca2 /= conjCate4Forward = (leftCate ca2, "<", semComb "T" se1 se2, "HaC", True)
     | isAvail && cateEqual ca2 predCate = (leftCate ca2, "<", semComb "T" se1 se2, "SP", True)
+    | isAvail && ca1 == npCate && ca2 == aux1Cate = (leftCate ca2, "<", semComb "T" se1 se2, "U1P", True)
     | isAvail && ca1 == npCate && ca2 == nounCompCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "HnC", True)
     | isAvail && ca2 == verbCompCate && ps2 /= "HX" = (leftCate ca2, "<", semComb "T" se1 se2, "HvC", True)
     | isAvail && ca2 == prep4BeiCate = (leftCate ca2, "<", semComb "T" se1 se2, "MOs", True)
@@ -135,7 +136,6 @@ appB cate1 cate2
 comF :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
 comF cate1 cate2
     | isPrimitive ca1 || isPrimitive ca2 = (nilCate, ">B", "", "", False)
-    | isAvail && ca1 == prefixCate && ca2 == numeralCate = (numeralCate, ">B", semComb "B" se1 se2, "HP", True)
     | isAvail && (ca2 == verbCate || ca2 == verbCate2 || ca1 == baPhraseCate) = (derivate (leftCate ca1) (midSlash ca2) (rightCate ca2), ">B", semComb "B" se1 se2, "DHv", True)
     | isAvail && ca1 == advCate && ca2 == advCate && ps1 == "PO" && ps2 == "PO" = (advCate, ">B", semComb "B" se1 se2, "PO", True)
     | isAvail && ca1 == advCate && ca2 == baPhraseCate = (baPhraseCate, ">B", semComb "B" se1 se2, "DHas", True)
@@ -256,19 +256,11 @@ raiB2 cate1 cate2
     llcate1 = leftCate lcate1
     isAvail = ca2 == rightCate llcate1
 
--- Forward remove: X Y -> X. Combinator K is used to remove the second semantic component.
+{- The syntactic rule from combinator K has NOT been used now because of its side effects.
+ - Forward remove: X Y -> X. Combinator K is used to remove the second semantic component.
+ -}
 remF :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
-remF cate1 cate2
-    | ca1 == adjCate && ca2 == aux1Cate = (ca1, ">K", semComb "K" se1 se2, "U1P", True)    -- "美丽 的"
-    | ca1 == sCate && ca2 == conjCate = (ca1, ">K", semComb "K" se1 se2, ps1, True)      --
-    | ca1 == advCate && ca2 == conjCate = (ca1, ">K", semComb "K" se1 se2, ps1, True)    -- "为祖国 而"
-    | otherwise = (nilCate, ">K", "", "", False)
-    where
-    ca1 = fst3 cate1
-    se1 = snd3 cate1
-    ps1 = thd3 cate1
-    ca2 = fst3 cate2
-    se2 = snd3 cate2
+remF cate1 cate2 = (nilCate, ">K", "", "", False)
 
 -- Forward composition and substituition: (Z/Y)/X Y/X -> Z/X. Combinator S is used to combine two semantic components.
 comFS :: (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
@@ -337,7 +329,7 @@ appBW cate1 cate2
 
 {- All tags of context-sensitive category-converted rules:
    (s1)S/s, (s2)P/s, (s3)O/s, (s4)A/s, (s5)Hn/s, (s6)N/s,
-   (v1)S/v, (v2)O/v, (v3)A/v, (v4)Hn/v, (v5)D/v, (v6)Cn/v, (v7)Cv/v, (v8)N/v, (v9)P/vt, (v10)OE/vt, (v11)Vt/vi, (v12)A/vd,
+   (v1)S/v, (v2)O/v, (v3)A/v, (v4)Hn/v, (v5)D/v, (v6)Cn/v, (v7)Cv/v, (v8)N/v, (v9)P/vt, (v10)OE/vt, (v11)Vt/vi,
    (a1)S/a, (a2)P/a, (a3)V/a, (a4)O/a, (a5)D/a, (a6)Da/a, (a7)Cv/a, (a8)Ca/a, (a9)Hn/a, (a10)N/a,
    (n1)P/n, (n2)V/n, (n3)A/n, (n4)Cn/n, (n5)Cv/n, (n6)D/n, (n7)Da/n, (n8)ADJ/n, (n9)S/nd, (n10)O/nd, (n11)Hn/nd,
    (d1)S/d, (d2)O/d, (d3)A/d, (d4)Hn/d, (d5)N/d, (d6)ADJ/d, (d7)Da/d, (d8)Ds/d,
@@ -350,7 +342,7 @@ appBW cate1 cate2
  -}
 
 ccTags = ["S/s","P/s","O/s","A/s","Hn/s","N/s",
-          "S/v","O/v","A/v","Hn/v","D/v","Cn/v","Cv/v","N/v","P/vt","OE/vt","Vt/vi","A/vd",
+          "S/v","O/v","A/v","Hn/v","D/v","Cn/v","Cv/v","N/v","P/vt","OE/vt","Vt/vi",
           "S/a","P/a","V/a","O/a","D/a","Da/a","Cv/a","Ca/a","Hn/a","N/a",
           "P/n","V/n","A/n","Cn/n","Cv/n","D/n","Da/n","ADJ/n","S/nd","O/nd","Hn/nd",
           "S/d","O/d","A/d","Hn/d","N/d","ADJ/d","Da/d","Ds/d",
@@ -366,7 +358,7 @@ ccTags = ["S/s","P/s","O/s","A/s","Hn/s","N/s",
  -}
 
 data Rule = Ss | Ps | Os | As | Hns | Ns
-          | Sv | Ov | Av | Hnv | Dv | Cnv | Cvv | Nv | Pvt | OEvt | Vtvi | Avd
+          | Sv | Ov | Av | Hnv | Dv | Cnv | Cvv | Nv | Pvt | OEvt | Vtvi
           | Sa | Pa | Va | Oa | Da | Daa | Cva | Caa | Hna | Na
           | Pn | Vn | An | Cnn | Cvn | Dn | Dan | ADJn | Snd | Ond | Hnnd
           | Sd | Od | Ad | Hnd | Nd | ADJd | Dad | Dsd
@@ -378,7 +370,7 @@ data Rule = Ss | Ps | Os | As | Hns | Ns
           | U3du3 deriving (Eq, Ord, Read)
 
 lexRule :: [Rule]
-lexRule = [Ss, Ps, Os, As, Hns, Ns, Sv, Ov, Av, Hnv, Dv, Cnv, Cvv, Nv, Pvt, OEvt, Vtvi, Avd, Sa, Oa, Hna, Na, Pa, Va, Da, Daa, Cva, Caa, Pn, Vn, An, Cnn, Cvn, Dn, Dan, ADJn, Snd, Ond, Hnnd, Sd, Od, Ad, Hnd, Nd, ADJd, Dad, Dsd, Dp, Ooe, Hnoe, Noe, Npe, Aq, Jfc, U3du3]
+lexRule = [Ss, Ps, Os, As, Hns, Ns, Sv, Ov, Av, Hnv, Dv, Cnv, Cvv, Nv, Pvt, OEvt, Vtvi, Sa, Oa, Hna, Na, Pa, Va, Da, Daa, Cva, Caa, Pn, Vn, An, Cnn, Cvn, Dn, Dan, ADJn, Snd, Ond, Hnnd, Sd, Od, Ad, Hnd, Nd, ADJd, Dad, Dsd, Dp, Ooe, Hnoe, Noe, Npe, Aq, Jfc, U3du3]
 
 -- Define how the tag of a category-converted rule shows as a letter string.
 instance Show Rule where
@@ -399,7 +391,6 @@ instance Show Rule where
     show Pvt = "P/vt"
     show OEvt = "OE/vt"
     show Vtvi = "Vt/vi"
-    show Avd = "A/vd"
     show Sa = "S/a"
     show Oa = "O/a"
     show Pa = "P/a"
@@ -505,8 +496,6 @@ updateOnOff onOff rws
     | rw1 == "-OE/vt" = updateOnOff (ruleOff OEvt onOff) rwt
     | rw1 == "+Vt/vi" = updateOnOff (ruleOn Vtvi onOff) rwt
     | rw1 == "-Vt/vi" = updateOnOff (ruleOff Vtvi onOff) rwt
-    | rw1 == "+A/vd" = updateOnOff (ruleOn Avd onOff) rwt
-    | rw1 == "-A/vd" = updateOnOff (ruleOff Avd onOff) rwt
     | rw1 == "+S/a" = updateOnOff (ruleOn Sa onOff) rwt
     | rw1 == "-S/a" = updateOnOff (ruleOff Sa onOff) rwt
     | rw1 == "+P/a" = updateOnOff (ruleOn Pa onOff) rwt
