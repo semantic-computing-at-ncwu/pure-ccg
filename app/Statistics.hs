@@ -226,7 +226,7 @@ countInTree bottomSn topSn funcIndex = do
  -}
          let convCalTag2FreqMap = toConvCalTag2FreMap tagFreqMapList Map.empty                                       -- From List [(<tag>, <tagNum>)], get Map <convCalTag> <tagNum>.
          let convTag2FreqMap = Map.filterWithKey (\k _ -> (k!!0 /= '>') && (k!!0 /= '<')) convCalTag2FreqMap         -- Filter out conversional tags and their frequencies.
-         let calTag2FreqMap = Map.filterWithKey (\k _ -> (k!!0 == '>') || (k!!0 == '<')) convCalTag2FreqMap          -- Filter out CCG calculus tags and their frequencies.
+         let calTag2FreqMap = Map.filterWithKey (\k _ -> (k!!0 == '>') || (k!!0 == '<') || (k!!0 == 'T')) convCalTag2FreqMap          -- Filter out CCG calculus tags and their frequencies.
          let convTagTotal = Map.size convTag2FreqMap                            -- The total number of different conversional tags
          let calTagTotal = Map.size calTag2FreqMap                              -- The total number of different calculus tags
          let convCalTagFreqMapList = Map.toList convCalTag2FreqMap
@@ -273,7 +273,7 @@ countInTree bottomSn topSn funcIndex = do
 
        else putStr ""
 
-    if funcIndex == 10                                         -- To get the frequency of every phrasal structure in all sentences.
+    if funcIndex == 10             -- To get the frequency of every phrasal structure in all sentences.
        then do
          let phraStru2FreqMap = toPhraStru2FreqMap sentClauPhraList Map.empty         -- Map String Int, namely Map PhraStru <psNum>.
          let phraStru2FreqMapList = Map.toList (Map.delete "DE" phraStru2FreqMap)     -- [(String, Int)], remove phrasal structure "DE".
@@ -492,14 +492,20 @@ countInScript bottomSn topSn funcIndex = do
          let sentClauTransConvList = map (map snd3) sentClauScriptList
                                                               -- [[[[Rule]]]], conversional rules(#4) used in every transition(#3) in parsing every clause(#2) in sentence list(#1).
          let f' = foldl (++) []
-         let convRuleList = (nub . f' . f' . f') sentClauTransConvList     -- [Rule]
+         let convRuleList = (f' . f' . f') sentClauTransConvList          -- [Rule]
+         let uniConvRuleList = nub convRuleList
+         let convRule2FreqList = (reverse . sortOn snd . map (\x -> (head x, length x)) . group . sort) convRuleList     -- [(Rule, Int)]
+
          let sentClauTransConvNumList = map (map (map length)) sentClauTransConvList
                                                               -- [[[num]]], list of numbers of conversional rules (#3) in parsing every clause(#2) in sentence list(#1).
          let sentClauConvTotalList = map (map (foldl (+) 0)) sentClauTransConvNumList
                                                               -- [[total]], list of totals of conversional rules in parsing every clause(#2) in sentence list(#1).
          putStrLn $ "countInScript: The conversion rules list of every clause in every sentences: " ++ show sentClauTransConvList
          putStrLn $ "countInScript: The total num. of conversional rules used in parsing every clause in every sentences: " ++ show sentClauConvTotalList
+         putStrLn $ "countInScript: Unique conversion rules: " ++ show uniConvRuleList ++ ", count " ++ (show . length) uniConvRuleList
          putStrLn $ "countInScript: Conversion rules: " ++ show convRuleList ++ ", count " ++ (show . length) convRuleList
+         putStrLn $ "countInScript: List of (Conversion rule, Frequency): " ++ show convRule2FreqList ++ ", count " ++ (show . length) convRule2FreqList
+
        else putStr ""
 
     if funcIndex == 5                                         -- Frequency of using type conversions in transitive computing for every clausal length.
@@ -1601,9 +1607,10 @@ formatMapListWithDoubleValue :: Show a => [(a, Double)] -> Int -> [(a, String)] 
 formatMapListWithDoubleValue mapList n = map (\x -> (fst x, printf ("%.0" ++ show n ++"f") (snd x))) mapList
 
 {- Convert one Map String Int to another Map String Int, the former is {(tag, tagNum)}, and the latter is {(convCalTag, convCalTagNum)}.
- - Here, 'tag' is C2CCG calculus tag such as '>', '<', '>B', '<B', '>Bx', '<Bx', and '>T->B', sometimes including type-conversional tag such as 'S/n->', 'P/a-<B, and 'S/n-P/a-<'.
+ - Here, 'tag' is CCG-C2 calculus tag such as ">", "<", ">B", "<B", ">B2", "<B2", "T->B", "T-<B", "T-<B2", ">K", ">S", "<S", ">W", "<W"],
+ - sometimes including type-conversional tag such as 'S/n->', 'P/a-<B, and 'S/n-P/a-<'.
  - The 'convCalTag' is a type-conversioned tag or a CCG calculus tag. A type-conversioned tag is a primitive type-conversioned tag or a compound type-conversioned tag.
- - For an example, C2CCG calculus tag 'S/n-P/a-<' includes type-conversioned tag 'S/n', 'P/a', 'S/n-P/a', and CCG calculus tag '<'.
+ - For an example, CCG-C2 calculus tag 'S/n-P/a-<' includes type-conversioned tag 'S/n', 'P/a', 'S/n-P/a', and CCG calculus tag '<'.
  - From a tag-frequency Map, a convCalTag-frequency Map is obtained.
  -}
 toConvCalTag2FreMap :: [(String, Int)] -> Map String Int -> Map String Int

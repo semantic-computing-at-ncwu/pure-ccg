@@ -319,7 +319,7 @@ splitAtDeliAtFP c cs
 splitTagAsConvOrCal :: String -> [String]
 splitTagAsConvOrCal "" = []
 splitTagAsConvOrCal tag
-    | tag!!0 /= '<' && tag!!0 /= '>' = (splitAtDeliAtFP '-' tag)!!0 : (splitTagAsConvOrCal ((splitAtDeliAtFP '-' tag)!!1))
+    | tag!!0 /= '<' && tag!!0 /= '>' && tag!!0 /= 'T' = (splitAtDeliAtFP '-' tag)!!0 : (splitTagAsConvOrCal ((splitAtDeliAtFP '-' tag)!!1))
     | otherwise = [tag]
 
 -- Calculate the string-length maximum in a String list.

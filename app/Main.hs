@@ -580,20 +580,22 @@ doCountInTreebank username = do
 -- A1_1. Display statistical results from field 'tree' in table 'corpus'.
 doCountInTree :: String -> Int -> IO ()
 doCountInTree username funcIndex = do
+    confInfo <- readFile "Configuration"
+    let tree_source = getConfProperty "tree_source" confInfo
+    let script_source = getConfProperty "script_source" confInfo
+    let phra_gram_dist_algo = getConfProperty "phra_gram_dist_algo" confInfo
+    let phrasyn_model = getConfProperty "phrasyn_model" confInfo
+    putStrLn $ " tree_source: " ++ tree_source
+    putStrLn $ " script_source: " ++ script_source
+    putStrLn $ " phra_gram_dist_algo: " ++ phra_gram_dist_algo
+    putStrLn $ " phrasyn_model: " ++ phrasyn_model
+
     putStr "Please input the value of 'serial_num' of start sentence: "
     line <- getLine
     let bottomSn = read line :: Int
     putStr "Please input the value of 'serial_num' of end sentence: "
     line <- getLine
     let topSn = read line :: Int
-
-    confInfo <- readFile "Configuration"
-    let tree_source = getConfProperty "tree_source" confInfo
-    let phra_gram_dist_algo = getConfProperty "phra_gram_dist_algo" confInfo
-    let phrasyn_model = getConfProperty "phrasyn_model" confInfo
-    putStrLn $ " tree_source: " ++ tree_source
-    putStrLn $ " phra_gram_dist_algo: " ++ phra_gram_dist_algo
-    putStrLn $ " phrasyn_model: " ++ phrasyn_model
 
     contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
     if contOrNot == "c"

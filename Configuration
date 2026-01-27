@@ -11,12 +11,14 @@ Database:ccg4c
 sent_source:corpus_pccg_manual
 
 # The database tables where parsing trees and scripts come from.
+# script_source:corpus_pccg_manual
 script_source:corpus_pccg_manual
 
 # tree_source:treebank_by_identity_ph_euc_ot_euc_sg_euc_Sn001_200
 # tree_source:treebank_by_SLR_identity_ph_euc_ot_euc_sg_euc_Sn001_200
 # tree_source:treebank_including_SLR_CL_seman
-tree_source:corpus_pccg_manual
+# tree_source:corpus_pccg_manual
+tree_source:corpus
 
 # Field storing parsing tree, default value of which is 'tree'.
 tree_field:tree
@@ -79,8 +81,8 @@ cate_ambig_resol_model:slr_corpus_202601
 # When NOT hope to update syntax or category ambiguity resolution samples in database, set this switch as Off.
 # Now, category ambiguity resolution model SLR samples are stored with treebank created by parsing with scripts.
 # Switch category_ambig_resol_sample_update_switch is NOT used at present.
-syntax_ambig_resol_sample_update_switch:Off
-category_ambig_resol_sample_update_switch:Off
+syntax_ambig_resol_sample_update_switch:On
+category_ambig_resol_sample_update_switch:On
 
 # Distance Algo. for phrasal grammar aspects, overlapping types, and StruGene contexts.
 # Possible values:
