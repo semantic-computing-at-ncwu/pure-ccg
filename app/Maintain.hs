@@ -20,6 +20,7 @@ module Maintain (
     countClausalAmbigAtSGSamples,             -- IO ()
     countPriorAmbigAtSGSamples,               -- IO ()
     removeCrossFlagFromTagInTreeAndScript,    -- IO ()
+    createSemanCombForEveryClau,              -- String -> IO ()
     ) where
 
 import Control.Monad
@@ -28,6 +29,7 @@ import qualified Data.String as DS
 import Database.MySQL.Base
 import Data.List.Utils
 import Data.Tuple.Utils
+import Data.Maybe
 import Text.Printf
 import Data.List
 import Database
@@ -420,3 +422,51 @@ removeCrossFlagFromTagInScript4ASent (s:ss) = removeCrossFlagFromTagInScript4ASe
 removeCrossFlagFromTag :: PhraCate -> PhraCate
 removeCrossFlagFromTag ((start, span), [(cate, tag, seman, phraStru, act)], secStart)
     = ((start, span), [(cate, filter (/= 'x') tag, seman, phraStru, act)], secStart)
+
+-- Create semantic combinator for every clause in given database table.
+createSemanCombForEveryClau :: IO ()
+createSemanCombForEveryClau = do
+    confInfo <- readFile "Configuration"
+    let tree_target = getConfProperty "tree_target" confInfo
+    putStrLn $ "tree_target: " ++ tree_target
+
+    putStr "Please input serial_num of start sentence: "
+    line1 <- getLine
+    let startSn = read line1 :: Int
+    putStr "Please input serial_num of end sentence: "
+    line2 <- getLine
+    let endSn = read line2 :: Int
+
+    if startSn > endSn
+      then putStrLn "No sentence is designated."
+      else do
+        putStrLn $ "startSn: " ++ line1
+        putStrLn $ "endSn: " ++ line2
+        contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
+        if contOrNot == "c"
+          then do
+            conn <- getConn
+            let sqlstat = DS.fromString $ "select serial_num, tree from " ++ tree_target ++ " where serial_num >= ? && serial_num <= ?"
+            stmt <- prepareStmt conn sqlstat
+            (_, is) <- queryStmt conn stmt [toMySQLInt32 startSn, toMySQLInt32 endSn]     -- read rows whose serial_nums are in designated range.
+            rows <- readStreamByInt32Text [] is                                 -- [(SendIdx, TreesStr)]
+            let rowsParsed = [x | x <- rows, snd x /= "[]"]                     -- After parsed, a row has non-empty Field 'tree'.
+            if (rowsParsed == [])
+              then putStrLn "createSemanCombForEveryClau: No sentence is asked to do this operation."
+              else do
+                let rows2Memory = map (\row -> (fst row, (readTrees . snd) row)) rowsParsed     -- [(SendIdx, [Tree])]
+--                putStrLn "createSemanCombForEveryClau: Original trees: "
+--                mapM_ (\row -> (putStr "(" >>= \_ -> putStr (show (fst row)) >>= \_ -> putStr "," >>= \_ -> showTrees (snd row) >>= \_ -> putStrLn ")")) rows2Memory
+
+                let sentIndices = map fst rows2Memory                           -- [SentIdx]
+                let sentForests = map snd rows2Memory                           -- [[Tree]]
+                sentSemanCombs <- mapM getSemanCombOfClauOfSent sentForests     -- [[ClauSemanComb]]
+                let sentSemanCombs' = zip sentIndices sentSemanCombs            -- [(SentIdx, [ClauSemanComb])]
+
+                let rows' = map (\row -> [(toMySQLText . nClauSemanCombToString . snd) row, (toMySQLInt32 . fst) row]) sentSemanCombs'
+                let sqlstat1 = DS.fromString $ "update " ++ tree_target ++ " set seman_comb = ? where serial_num = ?"
+                oks <- executeMany conn sqlstat1 rows'
+                putStrLn $ show (length oks) ++ " rows have been updated."      -- Only rows with their values changed are affected rows.
+
+            close conn                       -- Close the connection.
+          else putStrLn "Command was cancelled."

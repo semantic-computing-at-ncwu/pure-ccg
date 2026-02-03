@@ -65,11 +65,15 @@ ruleTags = [">","<",">B","<B",">B2","<B2","T->B","T-<B","T-<B2",">K",">S","<S","
 
 {- Combine two semantic components by given combinator and reduct at most 10 steps.
  - Semantics of word or phrase is considered as CL term. return reducted CL term.
+ - To want to forbid reduct on semantic term, use "show t" instead of "show t'", and build codes again.
  -}
 semComb :: String -> Seman -> Seman -> Seman
-semComb combinator se1 se2 = show t'
+--semComb combinator se1 se2 = show t'                 -- Reduce
+semComb combinator se1 se2 = show t                    -- Not reduce
     where
-      t = getTermFromStr $ "((" ++ combinator ++ " " ++ se1 ++ ") " ++ se2 ++ ")"
+      t = case combinator of
+            "A" -> JuxTerm (ConstTerm se1) (ConstTerm se2)                      -- Reduct for combinator 'A'
+            _ -> getTermFromStr $ "((" ++ combinator ++ " " ++ se1 ++ ") " ++ se2 ++ ")"   -- Not for others
       t' = reduct 0 10 t
 
 -- Forward application comes from combinator "A", taking the form of "X/Y Y -> X", while combinator "A" is used to combine two semantic components.

@@ -1113,9 +1113,10 @@ doTestGetCLTermFromLambdaTerm :: String -> IO ()
 doTestGetCLTermFromLambdaTerm username = do
     putStrLn " ? -> Display command list"
     putStrLn " 1 -> Input a string of simple type, from which a CL term is tried to construct"
+    putStrLn " 2 -> Input a string of lambda term, from which a CL term is tried to construct"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -1143,6 +1144,21 @@ doTestGetCLTermFromLambdaTerm username = do
                 if cLTerm /= nullTerm
                   then putStrLn $ "  The corresponding CL term: " ++ show cLTerm
                   else putStrLn $ "  The corresponding CL term: Nothing"
+          "2" -> do
+            confInfo <- readFile "Configuration"
+            let omitClauseK = read (getConfProperty "omitClauseK" confInfo) :: Bool
+            if omitClauseK
+              then putStrLn "[INFO] Omit clause (k)"
+              else putStrLn "[INFO] Do not omit clause (k)"
+            putStr "Please input a string of a lambda term (like \"x1\", \"(\\x1. M)\", or \"(M N)\"): "
+            inStr <- getLine
+            if not (isStrOfLambdaTerm inStr)
+              then putStrLn "Input is NOT a string of a lambda term."
+              else do
+                let lTerm = getLTermFromStr inStr
+                putStrLn $ "  The lambda term: " ++ show lTerm
+                cLTerm <- getCLTermFromLambdaTerm lTerm
+                putStrLn $ "  The corresponding CL term: " ++ show cLTerm
         doTestGetCLTermFromLambdaTerm username                -- Rear recursion
 
 -- C. Various maintenance tools.
@@ -1158,9 +1174,10 @@ doMaintenance username = do
     putStrLn " 7 -> Create pure-CCG marked sentences from their revised part-of-speech marks"
     putStrLn " 8 -> Copy pure-CCG marked sentences indicated by serial_num range to column cate_sent2"
     putStrLn " 9 -> Change grammar rule tags from CCG-C2 into pure-CCG"
+    putStrLn " A -> Create semantic combinator for every clause in a treebank"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -1175,6 +1192,7 @@ doMaintenance username = do
                "7" -> posToCate                                -- Defined in Module 'Corpus'
                "8" -> copyCate                                 -- Defined in Module 'Corpus'
                "9" -> removeCrossFlagFromTagInTreeAndScript    -- Defined in Module 'Maintain'
+               "A" -> doCreateSemanticCombinatorForClause      -- Defined in Module 'Maintain'
              doMaintenance username                            -- Rear recursion
 
 -- C_1. Rearrange index column in a certain table.
@@ -1408,6 +1426,10 @@ doCountClausalAmbigAtSGSamples username = countClausalAmbigAtSGSamples
 -- C_6. Count Prior ambiguity at StruGene2 samples.
 doCountPriorAmbigAtSGSamples :: String -> IO ()
 doCountPriorAmbigAtSGSamples username = countPriorAmbigAtSGSamples
+
+-- C_A. Create semantic combinator of every clause in a treebank.
+doCreateSemanticCombinatorForClause :: IO ()
+doCreateSemanticCombinatorForClause = createSemanCombForEveryClau
 
 -- D. 测试聚类模块的相关函数.
 doClustering :: String -> IO ()

@@ -102,7 +102,8 @@ module Utils (
     setLeftSub,    -- BiTree a -> BiTree a -> BiTree a
     setRightSub,   -- BiTree a -> BiTree a -> BiTree a
     setRoot,       -- a -> BiTree a -> BiTree a
-    traverseBiTree,     -- BiTree a -> [a]
+    preTravOnBiTree,     -- BiTree a -> [a]
+    traverseBiTree,      -- (a -> a) -> BiTree a -> BiTree a
     nodePairsBetwTwOBiTree,   -- BiTree a -> BiTree a -> [(a,a)]
 --    stringToBiTree,     -- (Read a) => String -> BiTree a
     forest2BiTree,      -- [BiTree a] -> BiTree a
@@ -858,10 +859,15 @@ instance Show a => Show (BiTree a) where
     show Empty = "()"
     show (Node r t1 t2) = "(" ++ show r ++ "," ++ show t1 ++ "," ++ show t2 ++ ")"
 
--- Traverse a BiTree instance to get node list.
-traverseBiTree :: BiTree a -> [a]
-traverseBiTree Empty = []
-traverseBiTree (Node root leftSub rightSub) = root : traverseBiTree leftSub ++ traverseBiTree rightSub
+-- Get node list of a BiTree instance according to preorder traversal.
+preTravOnBiTree :: BiTree a -> [a]
+preTravOnBiTree Empty = []
+preTravOnBiTree (Node root leftSub rightSub) = root : preTravOnBiTree leftSub ++ preTravOnBiTree rightSub
+
+-- Traverse a Bitree instance.
+traverseBiTree :: (a -> a) -> BiTree a -> BiTree a
+traverseBiTree _ Empty = Empty
+traverseBiTree f (Node root leftSub rightSub) = Node (f root) (traverseBiTree f leftSub) (traverseBiTree f rightSub)
 
 -- Non-recursive algorithm for geting node pairs between two BiTree instances.
 nodePairsBetwTwOBiTree :: BiTree a -> BiTree a -> [(a,a)]

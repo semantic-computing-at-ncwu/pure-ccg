@@ -417,6 +417,25 @@ countInTree bottomSn topSn funcIndex = do
              dispList 1 (fif5 phraSynPairSimTuple)
        else putStr ""
 
+--    if funcIndex == 16               -- To get what combinators are used in every clause in every sentence.
+--       then do
+--         let sentClauTermList = map (\sent -> map (\clau -> map (\phra -> phraCate2Com phra) sent) sentClauPhraList  -- [[[Term]]]
+--         let tagFreqMapList = Map.toList tag2FreqMap                                                    -- [(String, Int)]
+--         let tagFregTotal = foldl (+) 0 (map snd tagFreqMapList)
+--         let ascListOfTagFreqByValue = toAscListOfMapByValue tagFreqMapList
+--         let descListOfTagFreqByValue = toDescListOfMapByValue tagFreqMapList
+--         let tagNormFreqDescList = map (\x -> (fst x, ((/(fromIntegral tagFregTotal)). fromIntegral) (snd x))) descListOfTagFreqByValue
+                                                               -- Normalized frequencies of different C2CCG calculus tags.
+
+--         putStrLn $ "countInTree: sentClauTermList: " ++ show sentClauTermList
+--       putStrLn $ "countInTree: The ascending list of frequencies of different C2CCG calculus tags: " ++ show ascListOfTagFreqByValue
+--         putStrLn $ "countInTree: The descending list of frequencies of different C2CCG calculus tags: " ++ show descListOfTagFreqByValue
+---         putStrLn $ "countInTree: The number of different C2CCG calculus tags: " ++ show (length tagFreqMapList)
+--         putStrLn $ "countInTree: The frequency total of different C2CCG calculus tags: " ++ show tagFregTotal
+--       putStrLn $ "countInTree: The normalized frequencies of different C2CCG calculus tags: " ++ show tagNormFreqDescList
+--         putStrLn $ "countInTree: The normalized frequencies of different C2CCG calculus tags: " ++ show (formatMapListWithFloatValue tagNormFreqDescList 4)
+--       else putStr ""
+
 {- Get statistics about field 'script' in Table <script_source> whose serial numbers are less than 'topSn' and
  - bigger than or equal to 'bottomSn', here 'funcIndex' indicates which statistics will be done.
  - <script_source> is the value of attribute 'script_source' in file Configuration.
@@ -677,7 +696,7 @@ countInStruGene syntax_ambig_resol_model startIdx endIdx funcIndex = do
              (defs, is) <- queryStmt conn stmt [startIdx', endIdx']
 
              contextOfOTStrList <- readStreamByTextTextTextText [] is               -- [(String, String, String, String)]
-             let contextOfOTList = map (\x -> (readPhraSynListFromStr (fst4 x), (traverseBiTree . readBiTreePhraSynFromStr) (snd4 x), (traverseBiTree . readBiTreePhraSynFromStr) (thd4 x), readPhraSynListFromStr (fth4 x))) contextOfOTStrList
+             let contextOfOTList = map (\x -> (readPhraSynListFromStr (fst4 x), (preTravOnBiTree . readBiTreePhraSynFromStr) (snd4 x), (preTravOnBiTree . readBiTreePhraSynFromStr) (thd4 x), readPhraSynListFromStr (fth4 x))) contextOfOTStrList
              let (les, lots, rots, res) = unzip4 contextOfOTList                      -- Extract [LeftExtend], [LeftOver], [RightOver] and [RightExtend].
              let phraSynList = nub $ foldl (++) [] les ++ (foldl (++) [] lots) ++ (foldl (++) [] rots) ++ (foldl (++) [] res)   -- [PhraSyn]
              return $ getTypePair2SimFromPSL phraSynList             -- (numOfPhraSyn, numOfCate, numOfCatePair, [((Category, Category), SimDeg)])
@@ -688,7 +707,7 @@ countInStruGene syntax_ambig_resol_model startIdx endIdx funcIndex = do
              (defs, is) <- queryStmt conn stmt [startIdx', endIdx']
 
              contextStrList <- readStreamByTextText [] is                             -- [(String, String)]
-             let contextList = map (\x -> ((traverseBiTree . readBiTreePhraSyn0FromStr) (fst x), (traverseBiTree . readBiTreePhraSyn0FromStr) (snd x))) contextStrList
+             let contextList = map (\x -> ((preTravOnBiTree . readBiTreePhraSyn0FromStr) (fst x), (preTravOnBiTree . readBiTreePhraSyn0FromStr) (snd x))) contextStrList
              let (lots, rots) = unzip contextList                                     -- Extract ([LeftOverTree], [RightOverTree]).
              let phraSyn0List = nub $ foldl (++) [] lots ++ (foldl (++) [] rots)    -- [PhraSyn0]
              return $ getTypePair2SimFromPS0L phraSyn0List             -- (numOfPhraSyn, numOfCate, numOfCatePair, [((Category, Category), SimDeg)])
@@ -752,7 +771,7 @@ countInStruGene syntax_ambig_resol_model startIdx endIdx funcIndex = do
              (defs, is) <- queryStmt conn stmt [startIdx', endIdx']
 
              contextOfOTStrList <- readStreamByTextTextTextText [] is               -- [(String, String, String, String)]
-             let contextOfOTList = map (\x -> (readPhraSynListFromStr (fst4 x), (traverseBiTree . readBiTreePhraSynFromStr) (snd4 x), (traverseBiTree . readBiTreePhraSynFromStr) (thd4 x), readPhraSynListFromStr (fth4 x))) contextOfOTStrList
+             let contextOfOTList = map (\x -> (readPhraSynListFromStr (fst4 x), (preTravOnBiTree . readBiTreePhraSynFromStr) (snd4 x), (preTravOnBiTree . readBiTreePhraSynFromStr) (thd4 x), readPhraSynListFromStr (fth4 x))) contextOfOTStrList
              let (les, lots, rots, res) = unzip4 contextOfOTList                      -- Extract [LeftExtend], [LeftOver], [RightOver] and [RightExtend].
              let phraSynList = nub $ foldl (++) [] les ++ (foldl (++) [] lots) ++ (foldl (++) [] rots) ++ (foldl (++) [] res)   -- [PhraSyn]
              return $ getTagPair2SimFromPSL phraSynList               -- (numOfPhraSyn, numOfTag, numOfTagPair, [((Tag, Tag), SimDeg)])
@@ -763,7 +782,7 @@ countInStruGene syntax_ambig_resol_model startIdx endIdx funcIndex = do
              (defs, is) <- queryStmt conn stmt [startIdx', endIdx']
 
              contextStrList <- readStreamByTextText [] is                             -- [(String, String)]
-             let contextList = map (\x -> ((traverseBiTree . readBiTreePhraSyn0FromStr) (fst x), (traverseBiTree . readBiTreePhraSyn0FromStr) (snd x))) contextStrList
+             let contextList = map (\x -> ((preTravOnBiTree . readBiTreePhraSyn0FromStr) (fst x), (preTravOnBiTree . readBiTreePhraSyn0FromStr) (snd x))) contextStrList
              let (lots, rots) = unzip contextList                                     -- Extract ([LeftOverTree], [RightOverTree]).
              let phraSyn0List = nub $ foldl (++) [] lots ++ (foldl (++) [] rots)                -- [PhraSyn0]
              return $ getTagPair2SimFromPS0L phraSyn0List               -- (numOfPhraSyn, numOfTag, numOfTagPair, [((Tag, Tag), SimDeg)])
@@ -827,7 +846,7 @@ countInStruGene syntax_ambig_resol_model startIdx endIdx funcIndex = do
              (defs, is) <- queryStmt conn stmt [startIdx', endIdx']
 
              contextOfOTStrList <- readStreamByTextTextTextText [] is               -- [(String, String, String, String)]
-             let contextOfOTList = map (\x -> (readPhraSynListFromStr (fst4 x), (traverseBiTree . readBiTreePhraSynFromStr) (snd4 x), (traverseBiTree . readBiTreePhraSynFromStr) (thd4 x), readPhraSynListFromStr (fth4 x))) contextOfOTStrList
+             let contextOfOTList = map (\x -> (readPhraSynListFromStr (fst4 x), (preTravOnBiTree . readBiTreePhraSynFromStr) (snd4 x), (preTravOnBiTree . readBiTreePhraSynFromStr) (thd4 x), readPhraSynListFromStr (fth4 x))) contextOfOTStrList
              let (les, lots, rots, res) = unzip4 contextOfOTList                      -- Extract [LeftExtend], [LeftOver], [RightOver] and [RightExtend].
              let phraSynList = nub $ foldl (++) [] les ++ (foldl (++) [] lots) ++ (foldl (++) [] rots) ++ (foldl (++) [] res)   -- [PhraSyn]
              return $ getStruPair2SimFromPSL phraSynList             -- (numOfPhraSyn, numOfPhraStru, numOfStruPair, [((PhraStru, PhraStru), SimDeg)])
@@ -838,7 +857,7 @@ countInStruGene syntax_ambig_resol_model startIdx endIdx funcIndex = do
              (defs, is) <- queryStmt conn stmt [startIdx', endIdx']
 
              contextStrList <- readStreamByTextText [] is                             -- [(String, String)]
-             let contextList = map (\x -> ((traverseBiTree . readBiTreePhraSyn0FromStr) (fst x), (traverseBiTree . readBiTreePhraSyn0FromStr) (snd x))) contextStrList
+             let contextList = map (\x -> ((preTravOnBiTree . readBiTreePhraSyn0FromStr) (fst x), (preTravOnBiTree . readBiTreePhraSyn0FromStr) (snd x))) contextStrList
              let (lots, rots) = unzip contextList                                     -- Extract ([LeftOverTree], [RightOverTree]).
              let phraSyn0List = nub $ foldl (++) [] lots ++ (foldl (++) [] rots)                -- [PhraSyn0]
              return $ getStruPair2SimFromPS0L phraSyn0List             -- (numOfPhraSyn, numOfPhraStru, numOfStruPair, [((PhraStru, PhraStru), SimDeg)])
@@ -901,7 +920,7 @@ countInStruGene syntax_ambig_resol_model startIdx endIdx funcIndex = do
              (defs, is) <- queryStmt conn stmt [startIdx', endIdx']
 
              contextOfOTStrList <- readStreamByTextTextTextText [] is               -- [(String, String, String, String)]
-             let contextOfOTList = map (\x -> (readPhraSynListFromStr (fst4 x), (traverseBiTree . readBiTreePhraSynFromStr) (snd4 x), (traverseBiTree . readBiTreePhraSynFromStr) (thd4 x), readPhraSynListFromStr (fth4 x))) contextOfOTStrList
+             let contextOfOTList = map (\x -> (readPhraSynListFromStr (fst4 x), (preTravOnBiTree . readBiTreePhraSynFromStr) (snd4 x), (preTravOnBiTree . readBiTreePhraSynFromStr) (thd4 x), readPhraSynListFromStr (fth4 x))) contextOfOTStrList
              let (les, lots, rots, res) = unzip4 contextOfOTList                      -- Extract [LeftExtend], [LeftOver], [RightOver] and [RightExtend].
              return $ nub $ foldl (++) [] les ++ (foldl (++) [] lots) ++ (foldl (++) [] rots) ++ (foldl (++) [] res)   -- [PhraSyn]
 

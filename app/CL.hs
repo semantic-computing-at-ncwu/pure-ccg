@@ -66,12 +66,12 @@ module CL (
 
     SimpleType(..),   -- Simple Type for CL terms
     isBasicType,      -- SimpleType -> Bool
-    isImplicationalType,   -- SimpleType -> Bool
+    isImplicationalType,    -- SimpleType -> Bool
     antecedent,       -- SimpleType -> Maybe SimpleType
     consequent,       -- SimpleType -> Maybe SimpleType
     allAntes,         -- SimpleType -> [SimpleType]
     finalCons,        -- SimpleType -> SimpleType
-    isStrOfSimpleType,     -- String -> Bool
+    isStrOfSimpleType,      -- String -> Bool
     indexOfArrow,     -- Int -> Int -> String -> Int
     indexOfArrow',    -- Int -> Int -> String -> Int
     getSimpleTypeFromStr,   -- String -> SimpleType
@@ -717,13 +717,22 @@ instance Ord LambdaTerm where
     Lambda _ _ <= Apply _ _ = True
     Apply a b <= Apply c d = a <= c || a == c && b <= d
 
--- Decide a string as well-formatted or not if for a lambda term.
+{- Decide a string as well-formatted or not if for a lambda term.
+ - Variable term: x, x1, ...
+ - Abstracted term: (\x. t)
+ - Apply term: (M N)
+ -}
 isStrOfLambdaTerm :: String -> Bool
 isStrOfLambdaTerm str
-    | str =~ "^[A-Za-z][A-Za-z0-9]*$" = True
-    | str =~ "^\\(\\\\[a-z][a-z0-9]*\\.[ ][A-Za-z][A-Za-z0-9]*\\)$" = True
-    | str =~ "^\\([A-Za-z][A-Za-z0-9]*[ ][A-Za-z][A-Za-z0-9]*\\)$" = True
+    | str =~ "^[A-Za-z][A-Za-z0-9']*$" = True
+    | str =~ "^\\(\\\\[a-z][a-z0-9]*\\.[ ].*\\)$" = isStrOfLambdaTerm t2Str
+    | str =~ "^\\(" && str =~ "\\)$" = isStrOfLambdaTerm t1Str && isStrOfLambdaTerm t2Str
     | otherwise = False
+    where
+      str' = init (tail str)
+      spaceIdx = indexOfDelimiter 0 0 0 ' ' str'
+      t1Str = take spaceIdx str'
+      t2Str = tail $ drop spaceIdx str'
 
 {- Get lambda term from its string.
  - Variable term: x, x1, ...
@@ -733,13 +742,14 @@ isStrOfLambdaTerm str
 getLTermFromStr :: String -> LambdaTerm
 getLTermFromStr str
     | not (isStrOfLambdaTerm str) = error $ "getLTermFromStr: Format error: " ++ str
-    | head str /= '(' = Var str
-    | not (isPrefixOf "(\\" str) = Apply (getLTermFromStr (tail t1Str)) (getLTermFromStr (init t2Str))
-    | otherwise = Lambda (init (drop 2 t1Str)) (getLTermFromStr (init t2Str))
+    | head str /= '(' = Var str                                                 -- Variable term
+    | not (isPrefixOf "(\\" str) = Apply (getLTermFromStr t1Str) (getLTermFromStr t2Str)      -- Apply term: (M N)
+    | otherwise = Lambda ((init . tail) t1Str) (getLTermFromStr t2Str)                   -- Abstracted term
     where
-       ws = words str
-       t1Str = ws!!0
-       t2Str = ws!!1
+      str' = init (tail str)
+      spaceIdx = indexOfDelimiter 0 0 0 ' ' str'
+      t1Str = take spaceIdx str'
+      t2Str = tail $ drop spaceIdx str'
 
 {- Get free variables in a lambda term.
  - If the lambda term is a variable term, return LambdaTerm list with it as only element.

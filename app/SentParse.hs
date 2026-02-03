@@ -64,6 +64,7 @@ import Data.List.Utils
 import Data.List
 import Data.Tuple.Utils
 import Data.String.Utils
+import Data.Maybe (fromMaybe)
 import Phrase
 import Rule
 import Corpus
@@ -71,6 +72,7 @@ import Corpus
 import AmbiResol
 import Clustering
 import Parse
+import CL
 import Output
 import Utils
 import Database
@@ -901,7 +903,7 @@ updateStruGene' clauTag contextOfSG overPairs = do
             close conn                                   -- Close MySQL connection.
             return ((leftOver, rightOver, prior):overPairs)
 
-      x | elem x ["stru_gene3a_phrasyn0_202509", "stru_gene3a_phrasyn0_202601"] -> do             -- Multimodel
+      x | isPrefixOf "stru_gene3a_phrasyn0_" x -> do       -- Multimodel
         let lot = phraCateTree2PhraSyn0Tree leftOverTree   -- BiTree PhraSyn0
         let rot = phraCateTree2PhraSyn0Tree rightOverTree  -- BiTree PhraSyn0
         let lotv = doubleBackSlash (show lot)
@@ -1162,9 +1164,9 @@ rollbackStruGene clauTag nPCs (op:ops) = do
                 close conn                       -- Close MySQL connection.
           else do
             putStrLn "rollbackStruGene: Inquire failed. It is impossible!"
-            close conn                       -- Close MySQL connection.
+            close conn                           -- Close MySQL connection.
 
-      x | elem x ["stru_gene3a_phrasyn0_202509","stru_gene3a_phrasyn0_202601"] -> do    -- Multimodel
+      x | isPrefixOf "stru_gene3a_phrasyn0_" x -> do             -- Multimodel
         conn <- getConn
         let sqlstat = read (show ("select id, clauTagPrior, lpHitCount, rpHitCount, nothHitCount from "
                                   ++ syntax_ambig_resol_model ++ " where leftOverTree = '" ++ lot0v ++ "' && "
@@ -1293,22 +1295,27 @@ parseSentByScript sn cs = do
         putStrLn "parseSentByScript: Finished parsing."
         let tagOfClauAnaly = (length origTrees, (fst . fif5) finFlagAndSLRAndTree, (snd . fif5) finFlagAndSLRAndTree)   -- Compare original tree with new tree.
 
+        maybeTerms <- mapM (getSemanCombOfClause . snd) newTree                 -- [Maybe Term]
+        let terms = map (fromMaybe nullTerm) maybeTerms                         -- [Term]
+        let clauIndices = map fst newTree                                       -- [ClauIdx]
+        let newSemanComb = zip clauIndices terms                                -- [(ClauIdx, Term)]
+
         let query = DS.fromString ("select serial_num from " ++ tree_target ++ " where serial_num = ?")
         stmt <- prepareStmt conn query
         (defs, is) <- queryStmt conn stmt [toMySQLInt32 sn]
         rows <- S.toList is
         if rows == []
           then do
-            let query = DS.fromString ("insert into " ++ tree_target ++ " set serial_num = ?, tree = ?, script = ?, SLR = ?, tagClause = ?")
+            let query = DS.fromString ("insert into " ++ tree_target ++ " set serial_num = ?, tree = ?, script = ?, seman_comb = ?, SLR = ?, tagClause = ?")
             stmt <- prepareStmt conn query
-            ok <- executeStmt conn stmt [toMySQLInt32 sn, toMySQLText (nTreeToString newTree), toMySQLText (nScriptToString newScript), toMySQLText (nClauseSLRToString (snd5 finFlagAndSLRAndTree)), toMySQLText (show tagOfClauAnaly)]
+            ok <- executeStmt conn stmt [toMySQLInt32 sn, toMySQLText (nTreeToString newTree), toMySQLText (nScriptToString newScript), toMySQLText (nClauSemanCombToString newSemanComb), toMySQLText (nClauseSLRToString (snd5 finFlagAndSLRAndTree)), toMySQLText (show tagOfClauAnaly)]
             let rn = getOkAffectedRows ok
             putStrLn $ "parseSentByScript: " ++ show rn ++ " row(s) were inserted in " ++ tree_target ++ "."
             close conn
           else do
-            let sqlstat = DS.fromString $ "update " ++ tree_target ++ " set tree = ?, script = ?, SLR = ?, tagClause = ? where serial_num = ?"
+            let sqlstat = DS.fromString $ "update " ++ tree_target ++ " set tree = ?, script = ?, seman_comb = ?, SLR = ?, tagClause = ? where serial_num = ?"
             stmt <- prepareStmt conn sqlstat
-            ok <- executeStmt conn stmt [toMySQLText (nTreeToString newTree), toMySQLText (nScriptToString newScript), toMySQLText (nClauseSLRToString (snd5 finFlagAndSLRAndTree)), toMySQLText (show tagOfClauAnaly), toMySQLInt32 sn]
+            ok <- executeStmt conn stmt [toMySQLText (nTreeToString newTree), toMySQLText (nScriptToString newScript), toMySQLText (nClauSemanCombToString newSemanComb), toMySQLText (nClauseSLRToString (snd5 finFlagAndSLRAndTree)), toMySQLText (show tagOfClauAnaly), toMySQLInt32 sn]
             let rn = getOkAffectedRows ok
             putStrLn $ "parseSentByScript: " ++ show rn ++ " row(s) were updated in " ++ tree_target ++ "."
             close conn
@@ -1451,6 +1458,10 @@ parseClauseWithScript clauTag rules nPCs banPCSets overPairs script origSLROfCla
           showTreeStru spls spls
 --          putStrLn $ "SLR ="
 --          showSLROfClause newSLRSample     -- Last round of transition does not create SLR.
+          clauSemanComb <- getSemanCombOfClause nPCs
+          case clauSemanComb of
+            Nothing -> putStrLn "No semantic combinator was created."
+            Just x -> putStrLn $ "Clausal semantic combinator: " ++ show x
           return (rules ++ [fst4 rtboPCs], (snd4 rtboPCs), thd4 rtboPCs, newSLROfClause)
 
 {- Do a trip of transition, insert or update related ambiguity resolution samples in Table <syntax_ambig_resol_model>, and return the category-converted

@@ -35,9 +35,13 @@ dependencies:
 - massiv
 - streaming
 - cassava
-- regex-posix
 - hmatrix
 - hmatrix-gsl
+- regex-posix
+- regex-tdfa
+- regex-base
+- array
+- mtl
 
 library:
   source-dirs: src

@@ -68,6 +68,16 @@ module Corpus (
     SLROfClause,         -- [SLROfATrans]
     SLROfSent,           -- [SLROfClause]
 
+    ClauSemanComb,       -- (ClauIdx, Term)
+    readClauSemanComb,   -- String -> IO ClauSemanComb
+    readClauSemanCombs,  -- String -> IO [ClauSemanComb]
+    clauSemanCombToString,    -- ClauSemanComb -> String
+    nClauSemanCombToString,   -- [ClauSemanComb] -> String
+    nSentSemanCombToString,   -- [[ClauSemanComb]] -> String
+    getSemanCombOfClause,     -- [PhraCate] -> IO (Maybe Term)
+    IDState,             -- State Int String
+    replaceWordSemanWithDecreasingIDs,    -- String -> String -> String
+    getSemanCombOfClauOfSent, -- [Tree] -> IO [ClauSemanComb]
     ) where
 
 import Control.Monad
@@ -77,11 +87,20 @@ import Database.MySQL.Base
 import Data.List.Utils
 import Data.List
 import Data.Tuple.Utils
+import Data.Maybe (fromMaybe)
 import Category
 import Phrase
 import Rule
+import CL
 import Utils
 import Database
+import qualified Data.List as DL
+import Text.Regex.TDFA
+import Text.Regex.Base.RegexLike
+import Control.Monad.State (State, evalState, get, put)
+import qualified Control.Monad as CM
+import qualified Data.Array as DA
+import Data.List (take, drop)
 
 -- Datatype POS for parts of speech (word classes).
 type POS = String
@@ -755,3 +774,104 @@ forestToString forest = listToString (map nPhraCateToString forest)
 -- Get the String from a [Forest] value.
 nForestToString :: [Forest] -> String
 nForestToString nForest = listToString (map forestToString nForest)
+
+-- The sequence number and semantic combinator of a clause
+type ClauSemanComb = (ClauIdx, Term)
+
+-- Read (ClauIdx, Term) from a String.
+readClauSemanComb :: String -> IO ClauSemanComb
+readClauSemanComb str = do
+    let (clauIdxStr, termStr) = stringToTuple str
+        clauIdx = read clauIdxStr :: Int
+        lambdaTerm = getLTermFromStr termStr
+    term <- getCLTermFromLambdaTerm lambdaTerm
+    return (clauIdx, term)
+
+-- Read [ClauSemanComb] from a String.
+readClauSemanCombs :: String -> IO [ClauSemanComb]
+readClauSemanCombs str = mapM readClauSemanComb (stringToList str)
+
+-- Get the String from a ClauSemanComb value.
+clauSemanCombToString :: ClauSemanComb -> String
+clauSemanCombToString clauSemanComb = "(" ++ show (fst clauSemanComb) ++ "," ++ show (snd clauSemanComb) ++ ")"
+
+-- Get the String from a [ClauSemanComb] value.
+nClauSemanCombToString :: [ClauSemanComb] -> String
+nClauSemanCombToString clauSemanCombs = listToString (map clauSemanCombToString clauSemanCombs)
+
+-- Get the String from a [[ClauSemanComb]] value.
+nSentSemanCombToString :: [[ClauSemanComb]] -> String
+nSentSemanCombToString sentSemanCombs = listToString (map nClauSemanCombToString sentSemanCombs)
+
+{- Create semantic combinator of a clause.
+ - Step 1: Find semantic terms of all words;
+ - Step 2: Find root phrases;
+ - Step 3: If more than one root phrase are found
+ -           then return Nothing
+ -           else construct one string for lambda term of clausal semantic term;
+ -                create CL term for the lambda term.
+ -}
+getSemanCombOfClause :: [PhraCate] -> IO (Maybe Term)
+getSemanCombOfClause pcClo = do
+    let wordSemanSeq = map ((!!0) . seOfCate) $ sort $ getPhraBySpan 0 pcClo    -- [Seman]
+        clauLen = length wordSemanSeq
+        roots = filter (\x -> (acOfCate x)!!0 && spOfCate x == clauLen - 1) pcClo
+    case length roots of
+        0 -> error $ "getSemanCombOfClause: No tree was built."
+        1 -> do
+            let clauSeman = (replaceWordSemanWithDecreasingIDs "[一-龥０-９Ａ-Ｚａ-ｚ0-9AC-Za-z，、．﹣－％×]+'" . (!!0) . seOfCate) (roots!!0)      -- Root seman is NOT reduced, so word sequence is kept originally.
+                                      -- Seman does NOT allowed including letter 'B' such that combinator B' or B3' can be distinguished with semantic B' or B3', although it excludes such semantics.
+                lambdaTermStr = concat (map (\x -> fst3 x ++ (show . snd3) x ++ thd3 x) (zip3 (repeat "(\\x") (reverse [0 .. clauLen - 1]) (repeat ". "))) ++ clauSeman ++ (concat (take clauLen (repeat ")")))
+--          putStrLn $ "Clausal lambda term: " ++ lambdaTermStr
+            cLTerm <- getCLTermFromLambdaTerm (getLTermFromStr lambdaTermStr)
+--          putStrLn $ "Clausal CL term: " ++ show cLTerm
+            case cLTerm of
+                term | term == nullTerm -> return Nothing
+                _ -> return (Just cLTerm)
+        _ -> do
+            putStrLn $ "getSemanCombOfClause: More than one root, count of roots: " ++ show (length roots)
+            return Nothing
+
+-- State to track the current ID
+type IDState = State Int String                   -- Current ID is state whose type is Int, final result is a String value.
+
+-- Designate unique variable to every word term from right to left as 'xn', 'xn-1', ..., 'x0'.
+replaceWordSemanWithDecreasingIDs :: String -> String -> String
+replaceWordSemanWithDecreasingIDs pattern input =
+    evalState (processMatches pattern input) 0
+
+    where
+      processMatches :: String -> String -> IDState
+      processMatches pattern input = do
+        let matches = input =~ pattern :: [MatchArray]
+        CM.foldM (processSingleMatch input) input (reverse matches)    -- Process matches from end to beginning to avoid index shifting
+
+      processSingleMatch :: String -> String -> MatchArray -> IDState
+      processSingleMatch original currentStr matchArr = do
+        currentID <- get
+        put (currentID + 1)
+
+        case DA.bounds matchArr of
+            (0, _) -> do
+                let (start, end) = matchArr DA.! 0
+                    replacement = "x" ++ show currentID
+                                         -- Replace in currentStr (which may already have previous replacements)
+                    newStr = replaceSubstring currentStr start end replacement
+                return newStr
+            _ -> return currentStr  -- No valid match, return unchanged
+
+      replaceSubstring :: String -> Int -> Int -> String -> String
+      replaceSubstring curStr start end replacement =
+          DL.take start curStr ++ replacement ++ DL.drop (start + end) curStr
+
+{- Create semantic combinator of every clause in a sentence.
+ - Tree :: (ClauIdx, [PhraCate])
+ - ClauSemanComb :: (ClauIdx, Term)
+ -}
+getSemanCombOfClauOfSent :: [Tree] -> IO [ClauSemanComb]
+getSemanCombOfClauOfSent  ts = do
+    maybeTerms <- mapM (getSemanCombOfClause . snd) ts                  -- [Maybe Term]
+    let terms = map (fromMaybe nullTerm) maybeTerms                     -- [Term]
+        clauIndices = map fst ts                                        -- [ClauIdx]
+        semanCombOfClauOfSent = zip clauIndices terms                   -- [(ClauIdx, Term)]
+    return semanCombOfClauOfSent

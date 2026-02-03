@@ -6,11 +6,12 @@ module MyTest (
   testMySQLRead,
   testClockTime,
   createCateConv2FreqPair,
+  testSimpleReplace,
+  testReplaceWithIncreasingIDs,
 ) where
 
 import Prelude hiding (lookup)
 import Data.Map hiding (map)
-import Data.List
 import qualified System.IO.Streams as S
 import Data.Time.Clock
 import Data.CSV as CSV
@@ -20,6 +21,16 @@ import Database.MySQL.Base
 import qualified Data.String as DS
 import Utils
 import Rule
+import Data.Tuple.Utils
+import Data.Maybe (fromMaybe)
+import Data.Char (isDigit)
+import qualified Data.List as DL
+import Text.Regex.TDFA
+import Text.Regex.Base.RegexLike
+import Control.Monad.State (State, evalState, get, put)
+import qualified Control.Monad as CM
+import qualified Data.Array as DA
+import Data.List (take, drop)
 
 testCase :: Int -> IO ()
 testCase i = case i of
@@ -85,3 +96,59 @@ createCateConv2FreqPair = do
     let conv2FreqForPCCG = (map (\x -> ((getRuleFromStr .fst) x, (read (snd x) :: Int))). map (stringToTuple) . stringToList) "[(A/n,420),(Cv/v,112),(O/v,112),(A/v,110),(N/v,109),(Hn/v,97),(D/a,61),(Cn/n,51),(N/a,48),(P/a,46),(O/s,46),(P/vt,37),(Da/d,34),(Ca/a,26),(N/s,26),(D/v,22),(Hn/d,21),(Jf/c,19),(D/n,19),(N/d,17),(O/a,16),(A/s,16),(Ds/d,15),(ADJ/n,15),(Cv/a,15),(P/s,14),(N/oe,13),(S/v,12),(A/d,11),(Hn/s,11),(O/d,9),(S/a,9),(Hn/a,7),(N/pe,4),(V/n,4),(P/n,4),(Da/a,4),(Hn/oe,3),(O/oe,3),(Vt/vi,3),(Cn/v,3),(A/q,2),(S/s,2),(U3d/u3,1),(ADJ/d,1),(S/d,1),(Hn/nd,1),(Da/n,1),(V/a,1)]"
     putStrLn $ "conv2FreqForCCGC2: " ++ show conv2FreqForCCGC2
     putStrLn $ "conv2FreqForPCCG: " ++ show conv2FreqForPCCG
+
+-- Replace patterns with increasing IDs without full regex
+simpleReplace :: String -> String
+simpleReplace input = snd3 $ DL.foldl' process (0, "", False) input
+  where
+    process (n, acc, False) '(' = (n, acc ++ "x" ++ show n, True)
+    process (n, acc, True) '\'' = (n + 1, acc, False)
+    process (n, acc, False) c = (n, acc ++ [c], False)
+    process (n, acc, True) c = (n, acc, True)
+
+testSimpleReplace :: IO ()
+testSimpleReplace = do
+  let text = "Some (text' with (parentheses'"
+  putStrLn $ "text: " ++ text
+  print $ simpleReplace text
+
+type Pattern = String
+type Replacement = String
+
+-- State to track the current ID
+type IDState = State Int String                   -- Current ID is state whose type is Int, final result is a String value.
+
+replaceWithIncreasingIDs :: String -> String -> String
+replaceWithIncreasingIDs pattern input =
+    evalState (processMatches pattern input) 0
+
+processMatches :: String -> String -> IDState
+processMatches pattern input = do
+    let matches = input =~ pattern :: [MatchArray]
+    CM.foldM (processSingleMatch input) input (reverse matches)    -- Process matches from end to beginning to avoid index shifting
+
+processSingleMatch :: String -> String -> MatchArray -> IDState
+processSingleMatch original currentStr matchArr = do
+    currentID <- get
+    put (currentID + 1)
+
+    case DA.bounds matchArr of
+        (0, _) -> do
+            let (start, end) = matchArr DA.! 0
+                replacement = "x" ++ show currentID
+                                         -- Replace in currentStr (which may already have previous replacements)
+                newStr = replaceSubstring currentStr start end replacement
+            return newStr
+        _ -> return currentStr  -- No valid match, return unchanged
+
+replaceSubstring :: String -> Int -> Int -> Replacement -> String
+replaceSubstring curStr start end replacement =
+    DL.take start curStr ++ replacement ++ DL.drop (start + end) curStr
+
+-- Example usage
+testReplaceWithIncreasingIDs :: IO ()
+testReplaceWithIncreasingIDs = do
+    let pattern = "[一-龥0-9A-Za-z]+'"  -- Match text in parentheses
+    let text = "我' ((B 1') x') (给' 你') 它'"
+    putStrLn $ replaceWithIncreasingIDs pattern text
+    -- Output: "Find [ID1] then [ID2] and [ID3]"
