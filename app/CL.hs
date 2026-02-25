@@ -58,6 +58,8 @@ module CL (
     isB3'Term,   -- Term -> Bool
     b3'Axiom,    -- Term -> Term
     termSeq2Term,     -- [Term] -> Term
+    termSeq2Term',    -- [Term] -> Term
+    curriedFuncForOnePara,  -- Term -> [Term] -> Int -> Term
     getTermFromStr,   -- String -> Term
     sortTerms,   -- [Term] -> [Term]
     doCombAxiom,      -- Term -> (Term, Bool)
@@ -399,11 +401,42 @@ uAxiom :: Term -> Term
 uAxiom (JuxTerm (JuxTerm (JuxTerm (JuxTerm (ConstTerm "U") x) y) z) w)= JuxTerm (JuxTerm (JuxTerm x z) w) y
 uAxiom t = t
 
--- Create a term by a sequence of terms, and the sequence is considered as left combination priority.
+{- Create a term by a sequence of terms, and the sequence is considered as left combination priority.
+ - Suppose term sequence is t1, t2, ..., tn.
+ - Result is (((t1 t2) t3) ... tn).
+ -}
 termSeq2Term :: [Term] -> Term
 termSeq2Term [] = nullTerm
 termSeq2Term [x] = x
 termSeq2Term xs = JuxTerm (termSeq2Term (init xs)) (last xs)
+
+{- Create a term by a sequence of terms, and the sequence is considered as right combination priority.
+ - Suppose term sequence is t1, t2, ..., tn.
+ - Result is (t1 ... (tn-2 (tn-1, tn))).
+ -}
+termSeq2Term' :: [Term] -> Term
+termSeq2Term' [] = nullTerm
+termSeq2Term' [x] = x
+termSeq2Term' xs = JuxTerm (head xs) (termSeq2Term' (tail xs))
+
+{- The Curried function, whose last parameter is the original i-th parameter.
+ - If original fucntion is "X c1 c2 ... ci-1 ci ci+1 ... cn", then return function "X' c1 c2 ... ci-1 ci+1 ... cn ci".
+ - Combinator X' equals to the following lambda term, which can be gotten by removing the abstract variables from the lambda term.
+ - (\c1. (\c2. ... (\ci-1. (\ci+1. ... (\cn. (\ci. ((((X c1) c2) ...) cn)
+ - "X' c1 c2 ... ci-1 ci+1 ... cn" is called the context function term as to ci.
+ - Algo:
+ -   (1) i = n, X' = X
+ -   (2) Otherwise, X’ = (n - i) times of iteration on X, where the j-th iteration is to juxtapose combinator Z and iteration result,
+ -       where Z is (n - j - 1) times of iteration on combinator C, and every iteration is to juxtapose combinator B and iteration result.
+ - Suppose n = 6 and i = 4. There are two times of iteration on X. First iteration result is ((B (B (B C))) X),
+ - and second iteration result is X' = ((B (B (B (B C)))) ((B (B (B C))) X)).
+ -}
+curriedFuncForOnePara :: Term -> [Term] -> Int -> Term
+curriedFuncForOnePara xTerm paraTerm idx = termSeq2Term ((x' : take (idx - 1) paraTerm) ++ drop idx paraTerm)
+    where
+      n = length paraTerm                         -- Num. of parameter terms
+      zs = [z | j <- [1 .. n - idx], let z = foldr (\_ -> (\c -> JuxTerm (ConstTerm "B") c)) (ConstTerm "C") [j .. n - 2]]
+      x' = foldr (\z -> (\iter -> JuxTerm z iter)) xTerm zs
 
 {- Suppose the well-formated string of a term is strict, namely not including any redundant space character.
  - (1) A null string is well-formatted;
