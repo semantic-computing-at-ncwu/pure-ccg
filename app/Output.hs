@@ -42,6 +42,11 @@ module Output (
     showForest,       -- [[PhraCate]] -> IO ()
     showTree,         -- [[PhraCate]] -> IO ()
     showTrees,        -- [[PhraCate]] -> IO ()
+    showClauWord,     -- (ClauIdx, [Seman]) -> IO ()
+    showClauWords,    -- [(ClauIdx, [Seman])] -> IO ()
+    showClauWords',   -- [(ClauIdx, [Seman])] -> IO ()
+    showSentClauWordSemanContext,   -- [(ClauIdx, [(Seman, Term)])] -> IO ()
+    showClauWordSemanContext,       -- (ClauIdx, [(Seman, Term)]) -> IO ()
     showATree,        -- Int -> [[PhraCate]] -> IO ()
     showForestWithTreeStru,      -- [[PhraCate]] -> IO ()
     showTreeStru,     -- [[PhraCate]] -> [[PhraCate]] -> IO ()
@@ -73,6 +78,7 @@ import Rule
 import Phrase
 import Corpus
 import AmbiResol
+import CL
 import Utils
 import Data.Char
 import Data.List
@@ -511,6 +517,69 @@ showTrees' (t:ts) = do
     showTrees' [t]
     putStrLn ","
     showTrees' ts
+
+{- The following definition is to show word sequence of a clause.
+ - ClauWord :: (ClauIdx, [Seman])
+ -}
+showClauWord :: (ClauIdx, [Seman]) -> IO ()
+showClauWord (clauIdx, semans) = do
+    putStr "("
+    putStr $ show clauIdx
+    putStr ","
+    putStr $ listToString semans
+    putStr ")"
+
+showClauWords :: [(ClauIdx, [Seman])] -> IO ()
+showClauWords [] = putStr "[]"
+showClauWords ss = do
+    putStr "["
+    showClauWords' ss
+    putStr "]"
+
+showClauWords' :: [(ClauIdx, [Seman])] -> IO ()
+showClauWords' [] = putStr ""
+showClauWords' [clauWord] = showClauWord clauWord
+showClauWords' (c:cs) = do
+    showClauWord c
+    putStr ","
+    showClauWords' cs
+
+-- Output [(ClauIdx, [(Seman, Term)])] in ternimal, here the Seman value is semantics of a word, the Term is a CL term.
+showSentClauWordSemanContext :: [(ClauIdx, [(Seman, Term)])] -> IO ()
+showSentClauWordSemanContext cs = do
+    putStr "["
+    showSentClauWordSemanContext' cs
+    putStr "]"
+
+showSentClauWordSemanContext' :: [(ClauIdx, [(Seman, Term)])] -> IO ()
+showSentClauWordSemanContext' [] = putStr ""
+showSentClauWordSemanContext' [c] = showClauWordSemanContext c
+showSentClauWordSemanContext' (c:cs) = do
+    showClauWordSemanContext c
+    putStr ","
+    showSentClauWordSemanContext' cs
+
+-- Output (ClauIdx, [(Seman, Term)]) in ternimal, here the Seman value is semantics of a word, the Term is a CL term.
+showClauWordSemanContext :: (ClauIdx, [(Seman, Term)]) -> IO ()
+showClauWordSemanContext (clauIdx, sts) = do
+    putStr "("
+    putStr $ show clauIdx
+    putStr ",["
+    showClauWordSemanContext' sts
+    putStr "])"
+
+showClauWordSemanContext' :: [(Seman, Term)] -> IO ()
+showClauWordSemanContext' [] = putStr ""
+showClauWordSemanContext' [(seman, term)] = do
+    putStr "("
+    putStr seman
+    putStr ","
+    putStr $ show term
+    putStr ")"
+showClauWordSemanContext' (st:sts) = do
+    showClauWordSemanContext' [st]
+    putStr ","
+    showClauWordSemanContext' sts
 
 showATree :: Int -> [Tree] -> IO ()
 showATree ind ts

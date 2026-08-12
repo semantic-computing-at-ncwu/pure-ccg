@@ -249,3 +249,9 @@ slr_ripe_corpus:slr_corpus_202509
 
 # Whether omit the clause (k) in Schonfinkel's variable elimination algorithm.
 omitClauseK:False
+
+# Maximal number of CL reduction steps
+maxReductStepNum:100
+
+# Whether a CL term should be reduced or not
+reduceOrNot:True

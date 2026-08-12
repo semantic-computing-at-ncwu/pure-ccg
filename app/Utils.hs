@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 -- Copyright (c) 2019-2026 North China University of Water Resources and Electric Power
 -- All rights reserved.
 
@@ -80,6 +82,7 @@ module Utils (
     getConfProperty,   -- String -> String -> String
     getLineUntil,      -- String -> [String] -> Bool -> IO String
     getNumUntil,       -- Int -> [Int] -> IO Int
+    getInputUntil,     -- String -> (String -> Bool) -> IO String
     acceptOrNot,       -- a -> String -> IO Maybe a
     compFiveLists,     -- [a] -> [a] -> [a] -> [a] -> [a] -> [[a]]
     dispList,          --  (Eq a, Show a) => Int -> [a] -> IO ()
@@ -110,15 +113,26 @@ module Utils (
     jaccardSimIndex,    -- Eq a => [a] -> [a] -> Double
     jaccardSimIndex',   -- Eq a => [[a]] -> Double
     findSubstringIndex, -- Eq a => [a] -> [a] -> Int
+    bracketOut,         -- String -> String
+    simToEmbedding,     -- Matrix Double -> Matrix Double
+    normalizeRows,      -- Matrix Double -> Matrix Double
+    lableEmbedding2Map, -- [String] -> Matrix Double -> Map String Vector
+    testSimToEmbedding, -- IO ()
+    upperTriList2SymMat,      -- Int -> [Double] -> Matrix Double
+    compEucDist,        -- Matrix Double -> Int -> [Double]
     ) where
 
 import Data.Tuple
-import Data.List (elemIndex, intersect, union, isPrefixOf, tails)
+import Data.List (elemIndex, intersect, union, isPrefixOf, tails, sortBy, sortOn)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.String as DS
 import Text.Printf
 import Data.Maybe
+import Data.Function (on)
+import qualified Numeric.LinearAlgebra as LA
+import Numeric.LinearAlgebra
+import Numeric.LinearAlgebra.Data
 
 -- Functions on four tuple.
 
@@ -668,9 +682,8 @@ getLineUntil prompt cs flag = do
                     else return (last cs)
              else getLineUntil prompt cs flag
 
-{- Read input number repeatedly until it is in designated number set.
- - Suppose the number set is not empty.
- - If the input number is null, namely pressing RETURN, return the first element of the number set;
+{- Read a string repeatedly until it satisfies a condition.
+ - If the input is null, namely pressing RETURN, return the first element of the number set;
  -}
 getNumUntil :: String -> [Int] -> IO Int
 getNumUntil _ [] = return 0       -- '0' denote exception.
@@ -684,6 +697,18 @@ getNumUntil prompt is = do
         if elem input is
           then return input
           else getNumUntil prompt is
+
+{- Read input number repeatedly until it is in designated number set.
+ - Suppose the number set is not empty.
+ - If the input number is null, namely pressing RETURN, return the first element of the number set;
+ -}
+getInputUntil :: String -> (String -> Bool) -> IO String
+getInputUntil prompt f = do
+    putStr prompt
+    inputStr <- getLine
+    if (f inputStr)
+      then return inputStr
+      else getInputUntil prompt f
 
 -- According to user opinion, accept or deny the input.
 acceptOrNot :: a -> String -> IO (Maybe a)
@@ -917,3 +942,121 @@ jaccardSimIndex' s1 ss = foldl (+) 0.0 indices / ((fromIntegral . length) indice
 -- Find index where a substring starts in a list. If the substring is NOT in the list, return -1.
 findSubstringIndex :: Eq a => [a] -> [a] -> Int
 findSubstringIndex sub str = fromMaybe (-1) $ elemIndex True $ map (isPrefixOf sub) (tails str)
+
+{- Brackets are treated independently as term symbols.
+ - "x0" -> ["x0"]
+ - "((x1" -> ["(","(","x1"]
+ - "x2)" -> ["x2",")"]
+ -}
+bracketOut :: String -> [String]
+bracketOut "" = []
+bracketOut str
+    | '(' == head str = "(" : bracketOut (tail str)
+    | ')' == last str = bracketOut (init str) ++ [")"]
+    | otherwise = [str]
+
+{- Input: (1) N×N similarity matrix S, elements in which are in [0,1];
+ -        (2) Embedding dimension.
+ - Output: N × embDim matrix, every column in which is a embedding vector of given dimension.
+ -}
+simToEmbedding :: Matrix Double -> Matrix Double
+simToEmbedding simMat = embMat
+  where
+      n = rows simMat                    -- Number of lables
+
+      -- From similarity matrix S in which elements are in [0,1], get distances D = 1 - S and their squares.
+      dMat = konst 1 (n,n) - simMat      -- Distance matrix
+      d2Mat = dMat ^ 2                   -- pointwise, namely square distance matrix.
+
+      -- 中心化矩阵 J = I - (1/n)·11ᵀ
+      eyeN = ident n                     -- Diagonal matrix
+      jMat = eyeN - (1 / fromIntegral n) `scale` konst 1 (n,n)       -- Centering matrix
+
+      -- 双中心化内积矩阵 B = -1/2 * J * D² * J
+      bMat = (-0.5) `scale` (jMat LA.<> d2Mat LA.<> jMat)
+
+      -- 对称矩阵特征分解
+      bHerm = LA.sym bMat                     -- Create a Hermitian matrix from a real symmetric matrix.
+      (eigVals, eigVecs) = eigSH bHerm
+
+      -- 特征值从大到小排序，取前K个，即嵌入式向量的维度embDim = K。
+      sortedPairs = sortBy (flip compare `on` fst) (zip (toList eigVals) (toColumns eigVecs))
+      numOfPosEigVals = length $ filter (\x -> fst x > 1e-12) sortedPairs
+      embDim = 2 ^ floor (log (fromIntegral numOfPosEigVals) / log 2)           -- Use bigger positive eigen values to get maximal power of 2.
+      topK = take embDim sortedPairs          -- embDim is the number of dimensions
+
+      -- 特征值为负时，特征向量置0；特征值为正时，按特征值缩放特征向量。
+      proc (lam, vec)
+        | lam > 1e-12 = scale (sqrt lam) vec
+        | otherwise   = konst 0 n             -- Length of an eigen vector is 'n', not 'embDim'.
+
+      scaledCols = map proc topK
+      embMat = fromColumns scaledCols          -- One row is an embedding vector.
+
+-- 可选：将所有嵌入向量 L2 归一化（用于后续相似度检索）
+normalizeRow :: Vector Double -> Vector Double
+normalizeRow v
+  | norm_2 v < 1e-10 = v
+  | otherwise = scale (1 / (norm_2 v)) v
+
+normalizeRows :: Matrix Double -> Matrix Double
+normalizeRows mat = fromRows $ map normalizeRow (toRows mat)
+
+{- Get Map k v, where k is label name, and v is double vector.
+ - lable list:
+ -    [lbl1, lbl2, ..., lbln]
+ - embedding matrix:
+ -    v11 v12 ... v1m
+ -    v2l v22 ... v2m
+ -    ...
+ -    vn1 vn2 ... vnm
+ - Map k v:
+ -    lbl1, [v11, v12, ..., v1m]
+ -    lbl2, [v21, v22, ..., v2m]
+ -     :
+ -    lbln, [vn1, vn2, ..., vnm]
+ -}
+lableEmbedding2Map :: [String] -> Matrix Double -> Map String (Vector Double)
+lableEmbedding2Map lableList embMat = Map.fromList $ zip lableList $ toRows embMat
+
+testSimToEmbedding :: IO ()
+testSimToEmbedding = do
+    putStrLn "=== MDS标签嵌入测试（相似度值域 [0,1]） ==="
+    let nTags = 2
+        -- 构造对称相似度矩阵，元素全部 ∈ [0,1]
+        sim :: Matrix Double
+        sim = fromLists
+            [ [1.0, 0.5]
+            , [0.5, 1.0]
+            ]
+        embRaw = simToEmbedding sim
+        embNorm = normalizeRows embRaw
+    putStrLn $ "标签数量 N = " ++ show (rows sim)
+    putStrLn $ "嵌入维度 = " ++ show (cols embRaw)
+    putStrLn "\\n标签0原始32维向量："
+    print (embRaw ! 0)
+    putStrLn "\\n标签1原始32维向量："
+    print (embRaw ! 1)
+    putStrLn "\\n标签0归一化32维向量："
+    print (embNorm ! 0)
+    putStrLn "\\n标签1归一化32维向量："
+    print (embNorm ! 1)
+
+
+{- Build a symmetric Double matrix from a flat upper-tri Double list, return list of matrix elements.
+ -}
+upperTriList2SymMat :: Int -> [Double] -> Matrix Double
+upperTriList2SymMat n es = matrix n (map snd symMatList)
+    where
+    upperTriList = [((i, j), es!!(i*n - floor(fromIntegral (i*(i+1)) / fromIntegral 2) + j)) | i <- [0..n-1], j <- [0..n-1], i<=j]
+    bottomTriList = [((i, j), es!!(j*n - floor(fromIntegral (j*(j+1)) / fromIntegral 2) + i))| i <- [0..n-1], j <- [0..n-1], i>j]
+    symMatList = sortOn fst $ upperTriList ++ bottomTriList
+
+{- Compute Euclidean distances between the given row vector and the others.
+ -}
+compEucDist :: Matrix Double -> Int -> [Double]
+compEucDist mat rowIdx = distList
+    where
+    vs = toRows mat                  -- [Vector Double]
+    v = vs!!rowIdx                   -- Vector Double
+    distList = map (\vx -> norm_2 (v - vx)) vs        -- [Double]

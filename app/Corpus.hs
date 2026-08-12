@@ -30,6 +30,10 @@ module Corpus (
     BanPCs,              -- [PhraCate]
     Script,              -- (ClauIdx,[[Rule]],[BanPCs])
     Tree,                -- (ClauIdx, [PhraCate])
+    ClauWordSeman,       -- (ClauIdx, [Seman])
+    WordSemanContext,    -- (Seman, Term)
+    ClauWordSemanContext,    -- (ClauIdx, [WordSemanContext])
+    ClauIntersionJuxtaposition,   -- (ClauIdx, [Term])
     quickSort4Tree,      -- [Tree] -> [Tree]
     quickSort4Script,    -- [Script] -> [Script]
     Closure,             -- [PhraCate]
@@ -39,6 +43,8 @@ module Corpus (
     readPCList,          -- String -> [PhraCate]
     readTree,            -- String -> Tree
     readTrees,           -- String -> [Tree]
+    readClauWordSemanFromTree,        -- Tree -> (ClauIdx, [Seman])
+    readClauWordSemanFromTrees,       -- [Tree] -> [(ClauIdx, [Seman])]
     readClauTag,         -- String -> (SentIdx, ClauIdx)
     readSLROfSent,       -- String -> SLROfSent
     getTreeDepth,        -- [PhraCate] -> Int
@@ -71,13 +77,21 @@ module Corpus (
     ClauSemanComb,       -- (ClauIdx, Term)
     readClauSemanComb,   -- String -> IO ClauSemanComb
     readClauSemanCombs,  -- String -> IO [ClauSemanComb]
+    readClauSemanComb',  -- String -> ClauSemanComb
+    readClauSemanCombs', -- String -> [ClauSemanComb]
     clauSemanCombToString,    -- ClauSemanComb -> String
     nClauSemanCombToString,   -- [ClauSemanComb] -> String
     nSentSemanCombToString,   -- [[ClauSemanComb]] -> String
+    nWordSemanContextToString,            -- [(Seman, Term)] -> String
+    clauWordSemanContextToString,         -- (ClauIdx, [(Seman, Term)]) -> String
+    sentClauWordSemanContextToString,     -- [ClauWordSemanContext] -> String
     getSemanCombOfClause,     -- [PhraCate] -> IO (Maybe Term)
     IDState,             -- State Int String
     replaceWordSemanWithDecreasingIDs,    -- String -> String -> String
-    getSemanCombOfClauOfSent, -- [Tree] -> IO [ClauSemanComb]
+    getSemanCombOfClauOfSent,             -- [Tree] -> IO [ClauSemanComb]
+    getClauWordSemanContext,  -- Term -> ClauWordSeman -> ClauWordSemanContext
+    sentClauWordSemanContextToString,     -- [ClauIntersionJuxtaposition] -> String
+    getClauIntersionJuxtaposition,        -- Term -> ClauWordSeman -> ClauIntersionJuxtaposition
     ) where
 
 import Control.Monad
@@ -544,6 +558,16 @@ type Script = (ClauIdx, [[Rule]], [BanPCs])
 -- A Tree is a clausal serial number and a list of PhraCate.
 type Tree = (ClauIdx, [PhraCate])
 
+-- A ClauWordSeman is a clausal serial number and a semantic list of words.
+type ClauWordSeman = (ClauIdx, [Seman])
+
+-- Word semantics and its context of a clause
+type WordSemanContext = (Seman, Term)
+type ClauWordSemanContext = (ClauIdx, [WordSemanContext])
+
+-- Intersion juxtaposition of a clause
+type ClauIntersionJuxtaposition = (ClauIdx, [Term])
+
 -- Quick sort for [Tree] according their ClauIdx field, where Tree :: (ClauIdx, [PhraCate]).
 quickSort4Tree :: [Tree] -> [Tree]
 quickSort4Tree [] = []
@@ -582,6 +606,17 @@ readTree str = (clauIdx, phraCateList)
 -- Read [Tree] from a String.
 readTrees :: String -> [Tree]
 readTrees str = map readTree (stringToList str)
+
+-- Read (ClauIdx, [Seman]) from an instance of Tree :: (ClauIdx, [PhraCate]).
+readClauWordSemanFromTree :: Tree -> (ClauIdx, [Seman])
+readClauWordSemanFromTree (clauIdx, tree) = (clauIdx, wordSemanList)
+    where
+    wordCateList = getPhraBySpan 0 tree
+    wordSemanList = map ((!!0) . seOfCate) wordCateList      -- [Seman]
+
+-- Read [(ClauIdx, [Seman])] from a String.
+readClauWordSemanFromTrees :: [Tree] -> [(ClauIdx, [Seman])]
+readClauWordSemanFromTrees trees = map readClauWordSemanFromTree trees
 
 -- Read (SentIdx, ClauIdx) from a String.
 readClauTag :: String -> (Int, Int)
@@ -778,7 +813,7 @@ nForestToString nForest = listToString (map forestToString nForest)
 -- The sequence number and semantic combinator of a clause
 type ClauSemanComb = (ClauIdx, Term)
 
--- Read (ClauIdx, Term) from a String.
+-- Read (ClauIdx, Term) from a String of (ClauIdx, LambdaTerm).
 readClauSemanComb :: String -> IO ClauSemanComb
 readClauSemanComb str = do
     let (clauIdxStr, termStr) = stringToTuple str
@@ -787,9 +822,23 @@ readClauSemanComb str = do
     term <- getCLTermFromLambdaTerm lambdaTerm
     return (clauIdx, term)
 
--- Read [ClauSemanComb] from a String.
+{- Read [ClauSemanComb] from a String of [(ClauIdx, LambdaTerm)].
+ - ClauSemanComb :: (ClauIdx, Term)
+ -}
 readClauSemanCombs :: String -> IO [ClauSemanComb]
 readClauSemanCombs str = mapM readClauSemanComb (stringToList str)
+
+-- Read (ClauIdx, Term) from a String of (ClauIdx, Term).
+readClauSemanComb' :: String -> ClauSemanComb
+readClauSemanComb' str = (clauIdx, term)
+    where
+    (clauIdxStr, termStr) = stringToTuple str
+    clauIdx = read clauIdxStr :: Int
+    term = getTermFromStr termStr
+
+-- Read [ClauSemanComb] from a String of [(ClauIdx, Term)].
+readClauSemanCombs' :: String -> [ClauSemanComb]
+readClauSemanCombs' str = map readClauSemanComb' (stringToList str)
 
 -- Get the String from a ClauSemanComb value.
 clauSemanCombToString :: ClauSemanComb -> String
@@ -802,6 +851,26 @@ nClauSemanCombToString clauSemanCombs = listToString (map clauSemanCombToString 
 -- Get the String from a [[ClauSemanComb]] value.
 nSentSemanCombToString :: [[ClauSemanComb]] -> String
 nSentSemanCombToString sentSemanCombs = listToString (map nClauSemanCombToString sentSemanCombs)
+
+-- Get the String from a [WordSemanContext] = [(Seman, Term)] value.
+nWordSemanContextToString :: [(Seman, Term)] -> String
+nWordSemanContextToString scs = listToString (map (\(seman, term) -> "(" ++ seman ++ "," ++ show term ++ ")") scs)
+
+-- Get the String from a ClauWordSemanContext = (ClauIdx, [(Seman, Term)]) value.
+clauWordSemanContextToString :: (ClauIdx, [(Seman, Term)]) -> String
+clauWordSemanContextToString (clauIdx, wordSemanContextSeq) = "(" ++ show clauIdx ++ "," ++ nWordSemanContextToString wordSemanContextSeq ++ ")"
+
+-- Get the String from a [ClauWordSemanContext] value.
+sentClauWordSemanContextToString :: [ClauWordSemanContext] -> String
+sentClauWordSemanContextToString sentClauWordSemanContext = listToString (map clauWordSemanContextToString sentClauWordSemanContext)
+
+-- Get the String from a ClauIntersionJuxtaposition = (ClauIdx, [Term]) value.
+clauIntersionJuxtapositionToString :: (ClauIdx, [Term]) -> String
+clauIntersionJuxtapositionToString (clauIdx, terms) = "(" ++ show clauIdx ++ "," ++ show terms ++ ")"
+
+-- Get the String from a [ClauIntersionJuxtaposition] value.
+sentClauIntersionJuxtapositionToString :: [ClauIntersionJuxtaposition] -> String
+sentClauIntersionJuxtapositionToString sentClauIntersionJuxtapositions = listToString (map clauIntersionJuxtapositionToString sentClauIntersionJuxtapositions)
 
 {- Create semantic combinator of a clause.
  - Step 1: Find semantic terms of all words;
@@ -875,3 +944,34 @@ getSemanCombOfClauOfSent  ts = do
         clauIndices = map fst ts                                        -- [ClauIdx]
         semanCombOfClauOfSent = zip clauIndices terms                   -- [(ClauIdx, Term)]
     return semanCombOfClauOfSent
+
+{- Get semantic context of every word in a clause.
+ - clauComb :: Semantic combinator of a clause
+ - clauWordSeman :: (ClauIdx, [Seman])
+ - clauWordSemanContext :: (ClauIdx, [WordSemanContext])
+ - type WordSemanContext = (Seman, Term).
+ -}
+getClauWordSemanContext :: Term -> ClauWordSeman -> ClauWordSemanContext
+getClauWordSemanContext clauComb clauWordSeman = (clauIdx, wordSemanContextSeq)
+    where
+    clauIdx = fst clauWordSeman                                                 -- ClauIdx
+    wordSemanSeq = snd clauWordSeman                                            -- [Seman]
+    paraTermSeq = map (\x -> ConstTerm x) wordSemanSeq                          -- [Term]
+    contextSeq = map (curriedFuncForOnePara clauComb paraTermSeq) [1 .. length paraTermSeq]       -- [Term]
+    wordSemanContextSeq = zip wordSemanSeq contextSeq                           -- [WordSemanContext]
+
+{- Get all intersion juxtaposition in a clause.
+ - clauComb :: Semantic combinator of a clause
+ - clauWordSeman :: (ClauIdx, [Seman])
+ - ClauIntersionJuxtaposition :: (ClauIdx, [term])
+ - reduceOrNot :: Whether semantic combination of the clause should be reduced or not
+ -}
+getClauIntersionJuxtaposition :: Bool -> Term -> ClauWordSeman -> ClauIntersionJuxtaposition
+getClauIntersionJuxtaposition reduceOrNot clauComb clauWordSeman = (clauIdx, juxtaposedTerms)
+    where
+    clauIdx = fst clauWordSeman                                                 -- ClauIdx
+    wordSemanSeq = snd clauWordSeman                                            -- [Seman]
+    paraTermSeq = map (\x -> ConstTerm x) wordSemanSeq                          -- [Term]
+    juxtaposedTerms = case reduceOrNot of
+                        True -> filter isJuxTerm $ subTermOfTerm $ reduct 0 100 $ termSeq2Term (clauComb : paraTermSeq)    -- [Term]
+                        False -> filter isJuxTerm $ subTermOfTerm $ termSeq2Term (clauComb : paraTermSeq)    -- [Term]

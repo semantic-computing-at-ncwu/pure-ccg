@@ -21,11 +21,19 @@ module Statistics (
     filterPhraStruInSentTrees,      -- PhraStru -> [(SentIdx, [Tree])] -> [(SentIdx, [Tree])]
     filterPhraStruInTrees,          -- PhraStru -> [Tree] -> [Tree]
     hasPhraStruInTree,              -- PhraStru -> Tree -> Bool
+    filterSemanInSentTrees,         -- Seman -> [(SentIdx, [Tree])] -> [(SentIdx, [Tree])]
+    filterSemanInTrees,             -- Seman -> [Tree] -> [Tree]
+    hasSemanInTree,                 -- Seman -> Tree -> Bool
     filterCateInSentTrees,          -- Category -> [(SentIdx, [Tree])] -> [(SentIdx, [Tree])]
     filterCateInTrees,              -- Category -> [Tree] -> [Tree]
     hasCateInTree,                  -- Category -> Tree -> Bool
     quickSort4PhraSyn,              -- [PhraSyn] -> [PhraSyn]
     phraSynLt,                      -- PhraSyn -> PhraSyn -> Bool
+
+    testGramAttr2Vec,      -- IO ()
+    cate2Vec,   -- IO (Map Category (Vector Double))
+    tag2Vec,    -- IO (Map Tag (Vector Double))
+    stru2Vec,   -- IO (Map PhraStru (Vector Double))
     ) where
 
 import Control.Monad
@@ -54,6 +62,7 @@ import AmbiResol
 import Clustering
 import Numeric.LinearAlgebra.Data
 import Numeric.LinearAlgebra
+import qualified Numeric.LinearAlgebra as LA
 import Output (showScripts, showScripts', showCatePair2SimList, showTagPair2SimList, showStruPair2SimList, showSpanPair2SimList)
 import AmbiResol (phraSynToString, stringToCTPList, purityOfMajorPrior)
 
@@ -1179,9 +1188,15 @@ searchInTree bottomSn topSn funcIndex = do
          dispTreeListOnStdout snTreesStrList'
       else putStr ""
 
-    if funcIndex == 8                                                   -- To do.
+    if funcIndex == 8                                                   -- To get serial_num list indicating those parsing trees which include given semantic component.
       then do
-        putStr "To do."
+         putStr "Please input a semantic component used in parsing sentence: "
+         seman <- getLine
+         let snTreesList' = filterSemanInSentTrees seman snTreesList    -- [(SentIdx, [Tree]], matching given semantic component.
+         let sentClauIdx = map (\x -> (fst x, map fst (snd x))) snTreesList'    -- [(SentIdx, [ClauIdx])]
+         putStrLn $ "searchInTree: The list of (SentIdx, [ClauIdx]) in which every clause includes semantic component \"" ++ seman ++ "\": " ++ show sentClauIdx
+         putStrLn $ "              Num. of sentences = " ++ show (length sentClauIdx)
+         putStrLn $ "              Num. of clauses = " ++ show (sum (map (length . snd) sentClauIdx))
       else putStr ""
 
 {- Get search result in field 'script' in Table <script_source> whose serial numbers are less than 'topSn' and
@@ -1928,6 +1943,32 @@ hasPhraStruInTree ps (clauIdx, (pc:pcs))
       ps' = psOfCate pc
       hasPhraStru = elem ps ps'
 
+{- Filter [(SentIdx, [Tree]], and remain the elements in which Tree inlcudes given semantic component.
+ -}
+filterSemanInSentTrees :: Seman -> [(SentIdx, [Tree])] -> [(SentIdx, [Tree])]
+filterSemanInSentTrees seman trees = filter (\st -> snd st /= []) $ map (\st -> (fst st, filterSemanInTrees seman (snd st))) trees
+
+{- Filter parsing trees with a given semantic component.
+ - Tree :: (ClauIdx, [PhraCate])
+ -}
+filterSemanInTrees :: Seman -> [Tree] -> [Tree]
+filterSemanInTrees _ [] = []
+filterSemanInTrees seman (t:ts)
+    | hasSemanInTree seman t = t : filterSemanInTrees seman ts
+    | otherwise = filterSemanInTrees seman ts
+
+{- If phrasal categories among a parsing tree include a given semantic component, return True.
+ - Tree :: (ClauIdx, [PhraCate])
+ -}
+hasSemanInTree :: Seman -> Tree -> Bool
+hasSemanInTree seman (_, []) = False
+hasSemanInTree seman (clauIdx, (pc:pcs))
+    | hasSeman = True
+    | otherwise = hasSemanInTree seman (clauIdx, pcs)
+    where
+      se' = seOfCate pc                      -- [Seman]
+      hasSeman = elem seman se'
+
 {- Filter [(SentIdx, [Tree]], and remain the elements in which Tree inlcudes given syntactic category.
  -}
 filterCateInSentTrees :: Category -> [(SentIdx, [Tree])] -> [(SentIdx, [Tree])]
@@ -1989,3 +2030,199 @@ getIdxOfclauWithoutParsingTree :: [[Int]] -> [(SentIdx, [Int])]
 getIdxOfclauWithoutParsingTree sentClauDepthList = filter ((elem (-1)) . snd) depthListWithSentIdx
     where
     depthListWithSentIdx = zip [1..] sentClauDepthList                          -- Affix sentence indices
+
+{- Get multidimensional scaling coordinates (Embedding vector) from similarities between grammatic attributes including categories,
+ - grammatic rules, and phrasal structures.
+ - The embedding dimension is determined by range size of a grammatic attribute.
+ - Grammatic attributes are extracted from treebank, indicated by Configuration property 'tree-source'.
+ -}
+testGramAttr2Vec :: IO ()
+testGramAttr2Vec = do
+    conn <- getConn
+    confInfo <- readFile "Configuration"                                        -- Read the local configuration file
+    let phrasyn_model = getConfProperty "phrasyn_model" confInfo
+        tree_source = getConfProperty "tree_source" confInfo
+        startIdxStr = getConfProperty "defaultStartIdx" confInfo
+        endIdxStr = getConfProperty "defaultEndIdx" confInfo
+        startIdx = read startIdxStr :: Int
+        endIdx = read endIdxStr :: Int
+        sqlstat = DS.fromString $ "select tree from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
+    stmt <- prepareStmt conn sqlstat
+    (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx, toMySQLInt32 endIdx]
+
+    sentStrList <- readStreamByText [] is                     -- [String], here a string is the parsing result of a sentence.
+    let sentClauStrList = map stringToList sentStrList        -- [[String]], here a string is the parsing result of a clause.
+        sentClauTreeList = map (map readTree) sentClauStrList     -- [[Tree]], here Tree ::= (ClauIdx, [PhraCate])
+        sentClauPhraList = map (map snd) sentClauTreeList     -- [[[PhraCate]]], here a PhraCate is the representation in memory of a phrase.
+
+    let prompt = "Test 'cate2Vec', are you sure? [y/n] (RETURN for 'y'): "
+    answer <- getLineUntil prompt ["y","n"] True
+    if answer == "y"
+      then do
+        let typePair2SimTuple = case phrasyn_model of
+                                  "phrasyn" -> getTypePair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfCate, NumOfCatePair, [((Category, Category), SimDeg)])
+                                  "phrasyn0" -> getTypePair2SimFromSCPL0 sentClauPhraList
+                                  _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
+            typePair2SimList = fth4 typePair2SimTuple             -- [((Category, Category), SimDeg)]
+            typeNum = snd4 typePair2SimTuple
+            typeList = map (snd . fst) $ take typeNum typePair2SimList              -- [Category]
+            upperTriangularSimDegList = map snd typePair2SimList                    -- [SimDeg]
+            embMat = normalizeRows $ simToEmbedding $ upperTriList2SymMat typeNum upperTriangularSimDegList       -- Matrix SimDeg
+            distMat = fromRows $ map (vector . compEucDist embMat) [0..typeNum-1]     -- Matrix Double, Euclidean distances
+        putStrLn $ "testGramAttr2Vec: The number of different categories: " ++ show typeNum
+        putStrLn $ "testGramAttr2Vec: Different categories: " ++ show typeList
+        putStr $ "testGramAttr2Vec: [((Category, Category), SimDeg)]: "
+        showCatePair2SimList (formatMapListWithDoubleValue typePair2SimList 4)
+        putStrLn $ "testGramAttr2Vec: The all rows of embMat: "
+        disp 4 embMat
+        putStrLn $ "testGramAttr2Vec: The distances between embedding vectors: "
+        disp 4 distMat
+      else putStr ""
+
+    let prompt = "Test 'tag2Vec', are you sure? [y/n] (RETURN for 'y'): "
+    answer <- getLineUntil prompt ["y","n"] True
+    if answer == "y"
+      then do
+        let tagPair2SimTuple = case phrasyn_model of
+                                  "phrasyn" -> getTagPair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfTag, NumOfTagPair, [((Tag, Tag), SimDeg)])
+                                  "phrasyn0" -> getTagPair2SimFromSCPL0 sentClauPhraList
+                                  _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
+            tagPair2SimList = fth4 tagPair2SimTuple             -- [((Tag, Tag), SimDeg)]
+            tagNum = snd4 tagPair2SimTuple
+            tagList = map (snd . fst) $ take tagNum tagPair2SimList             -- [Tag]
+            upperTriangularSimDegList = map snd tagPair2SimList                 -- [SimDeg]
+            embMat = normalizeRows $ simToEmbedding $ upperTriList2SymMat tagNum upperTriangularSimDegList       -- Matrix SimDeg
+            distMat = fromRows $ map (vector . compEucDist embMat) [0..tagNum-1]        -- Matrix Double, Euclidean distances
+        putStrLn $ "testGramAttr2Vec: The number of different grammatic rules: " ++ show tagNum
+        putStrLn $ "testGramAttr2Vec: Different grammatic rules: " ++ show tagList
+--        putStr $ "testGramAttr2Vec: [((Tag, Tag), SimDeg)]: "
+--        showTagPair2SimList (formatMapListWithDoubleValue tagPair2SimList 4)
+        let rs = rows embMat
+            cs = cols embMat
+        putStrLn $ "distVecList: embMat.rs = " ++ show rs ++ ", embMat.cs = " ++ show cs
+        putStrLn $ "testGramAttr2Vec: The first 5 rows of embMat: "
+        disp 4 (embMat ?? (Take 5, Drop 0))
+        putStrLn $ "testGramAttr2Vec: The distances between the first 5 rows and the all rows: "
+        disp 4 (distMat ?? (Take 5, Drop 0))
+      else putStr ""
+
+    let prompt = "Test 'stru2Vec', are you sure? [y/n] (RETURN for 'y'): "
+    answer <- getLineUntil prompt ["y","n"] True
+    if answer == "y"
+      then do
+        let struPair2SimTuple = case phrasyn_model of
+                                  "phrasyn" -> getStruPair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfStru, NumOfStruPair, [((PhraStru, PhraStru), SimDeg)])
+                                  "phrasyn0" -> getStruPair2SimFromSCPL0 sentClauPhraList
+                                  _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
+            struPair2SimList = fth4 struPair2SimTuple             -- [((PhraStru, PhraStru), SimDeg)]
+            struNum = snd4 struPair2SimTuple
+            struList = map (snd . fst) $ take struNum struPair2SimList          -- [Tag]
+            upperTriangularSimDegList = map snd struPair2SimList                -- [SimDeg]
+            embMat = normalizeRows $ simToEmbedding $ upperTriList2SymMat struNum upperTriangularSimDegList       -- Matrix SimDeg
+            distMat = fromRows $ map (vector . compEucDist embMat) [0..struNum-1]     -- Matrix Double, Euclidean distances
+        putStrLn $ "testGramAttr2Vec: The number of different phrasal structures: " ++ show struNum
+        putStrLn $ "testGramAttr2Vec: Different phrasal structures: " ++ show struList
+        let rs = rows embMat
+            cs = cols embMat
+        putStrLn $ "distVecList: embMat.rs = " ++ show rs ++ ", embMat.cs = " ++ show cs
+        putStrLn $ "testGramAttr2Vec: The first 5 rows of embMat: "
+        disp 4 (embMat ?? (Take 5, Drop 0))
+        putStrLn $ "testGramAttr2Vec: The distances between the first 5 rows and the all rows: "
+        disp 4 (distMat ?? (Take 5, Drop 0))
+      else putStr ""
+
+{- Get category embedding from similarities between categories, and embedding dimension is determined by number of different categories.
+ -}
+cate2Vec :: IO (Map Category (Vector Double))
+cate2Vec = do
+    conn <- getConn
+    confInfo <- readFile "Configuration"                                        -- Read the local configuration file
+    let phrasyn_model = getConfProperty "phrasyn_model" confInfo
+        tree_source = getConfProperty "tree_source" confInfo
+        startIdxStr = getConfProperty "defaultStartIdx" confInfo
+        endIdxStr = getConfProperty "defaultEndIdx" confInfo
+        startIdx = read startIdxStr :: Int
+        endIdx = read endIdxStr :: Int
+        sqlstat = DS.fromString $ "select tree from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
+    stmt <- prepareStmt conn sqlstat
+    (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx, toMySQLInt32 endIdx]
+
+    sentStrList <- readStreamByText [] is                     -- [String], here a string is the parsing result of a sentence.
+    let sentClauStrList = map stringToList sentStrList        -- [[String]], here a string is the parsing result of a clause.
+        sentClauTreeList = map (map readTree) sentClauStrList     -- [[Tree]], here Tree ::= (ClauIdx, [PhraCate])
+        sentClauPhraList = map (map snd) sentClauTreeList     -- [[[PhraCate]]], here a PhraCate is the representation in memory of a phrase.
+
+        typePair2SimTuple = case phrasyn_model of
+                          "phrasyn" -> getTypePair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfCate, NumOfCatePair, [((Category, Category), SimDeg)])
+                          "phrasyn0" -> getTypePair2SimFromSCPL0 sentClauPhraList
+                          _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
+        typePair2SimList = fth4 typePair2SimTuple             -- [((Category, Category), SimDeg)]
+        typeNum = snd4 typePair2SimTuple
+        typeList = map (snd . fst) $ take typeNum typePair2SimList              -- [Category]
+        upperTriangularSimDegList = map snd typePair2SimList                    -- [SimDeg]
+        embMat = normalizeRows $ simToEmbedding $ upperTriList2SymMat typeNum upperTriangularSimDegList       -- Matrix SimDeg
+    return (Map.fromList (zip typeList (toRows embMat)))
+
+{- Get grammar-rule (tag) embedding from similarities between rules, and embedding dimension is determined by number of different grammatic rules.
+ -}
+tag2Vec ::IO (Map Tag (Vector Double))
+tag2Vec = do
+    conn <- getConn
+    confInfo <- readFile "Configuration"                                        -- Read the local configuration file
+    let phrasyn_model = getConfProperty "phrasyn_model" confInfo
+        tree_source = getConfProperty "tree_source" confInfo
+        startIdxStr = getConfProperty "defaultStartIdx" confInfo
+        endIdxStr = getConfProperty "defaultEndIdx" confInfo
+        startIdx = read startIdxStr :: Int
+        endIdx = read endIdxStr :: Int
+        sqlstat = DS.fromString $ "select tree from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
+    stmt <- prepareStmt conn sqlstat
+    (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx, toMySQLInt32 endIdx]
+
+    sentStrList <- readStreamByText [] is                     -- [String], here a string is the parsing result of a sentence.
+    let sentClauStrList = map stringToList sentStrList        -- [[String]], here a string is the parsing result of a clause.
+        sentClauTreeList = map (map readTree) sentClauStrList     -- [[Tree]], here Tree ::= (ClauIdx, [PhraCate])
+        sentClauPhraList = map (map snd) sentClauTreeList     -- [[[PhraCate]]], here a PhraCate is the representation in memory of a phrase.
+
+        tagPair2SimTuple = case phrasyn_model of
+                          "phrasyn" -> getTagPair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfTag, NumOfTagPair, [((Tag, Tag), SimDeg)])
+                          "phrasyn0" -> getTagPair2SimFromSCPL0 sentClauPhraList
+                          _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
+        tagPair2SimList = fth4 tagPair2SimTuple               -- [((Tag, Tag), SimDeg)]
+        tagNum = snd4 tagPair2SimTuple
+        tagList = map (snd . fst) $ take tagNum tagPair2SimList              -- [Tag]
+        upperTriangularSimDegList = map snd tagPair2SimList                  -- [SimDeg]
+        embMat = normalizeRows $ simToEmbedding $ upperTriList2SymMat tagNum upperTriangularSimDegList       -- Matrix SimDeg
+    return (Map.fromList (zip tagList (toRows embMat)))
+
+{- Get phrase-structure embedding from similarities between phrasal structures, and embedding dimension is determined by number of different phrasal structures.
+ -}
+stru2Vec :: IO (Map PhraStru (Vector Double))
+stru2Vec = do
+    conn <- getConn
+    confInfo <- readFile "Configuration"                                        -- Read the local configuration file
+    let phrasyn_model = getConfProperty "phrasyn_model" confInfo
+        tree_source = getConfProperty "tree_source" confInfo
+        startIdxStr = getConfProperty "defaultStartIdx" confInfo
+        endIdxStr = getConfProperty "defaultEndIdx" confInfo
+        startIdx = read startIdxStr :: Int
+        endIdx = read endIdxStr :: Int
+        sqlstat = DS.fromString $ "select tree from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
+    stmt <- prepareStmt conn sqlstat
+    (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx, toMySQLInt32 endIdx]
+
+    sentStrList <- readStreamByText [] is                     -- [String], here a string is the parsing result of a sentence.
+    let sentClauStrList = map stringToList sentStrList        -- [[String]], here a string is the parsing result of a clause.
+        sentClauTreeList = map (map readTree) sentClauStrList     -- [[Tree]], here Tree ::= (ClauIdx, [PhraCate])
+        sentClauPhraList = map (map snd) sentClauTreeList     -- [[[PhraCate]]], here a PhraCate is the representation in memory of a phrase.
+
+        struPair2SimTuple = case phrasyn_model of
+                          "phrasyn" -> getStruPair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfStru, NumOfStruPair, [((PhraStru, PhraStru), SimDeg)])
+                          "phrasyn0" -> getTagPair2SimFromSCPL0 sentClauPhraList
+                          _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
+        struPair2SimList = fth4 struPair2SimTuple             -- [((PhraStru, PhraStru), SimDeg)]
+        struNum = snd4 struPair2SimTuple
+        struList = map (snd . fst) $ take struNum struPair2SimList           -- [PhraStru]
+        upperTriangularSimDegList = map snd struPair2SimList                 -- [SimDeg]
+        embMat = normalizeRows $ simToEmbedding $ upperTriList2SymMat struNum upperTriangularSimDegList       -- Matrix SimDeg
+    return (Map.fromList (zip struList (toRows embMat)))

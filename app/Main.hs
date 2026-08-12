@@ -12,6 +12,7 @@ import Control.Monad
 import qualified System.IO.Streams as S
 import qualified Data.Map as Map
 import Data.List (sort, isPrefixOf)
+import Data.Maybe (fromMaybe)
 import Data.Tuple.Utils
 import System.IO
 import Data.Time.Clock
@@ -31,6 +32,7 @@ import KMedoids
 import Maintain
 import Output (showSnScript2List)
 import Text.Printf
+import qualified Numeric.LinearAlgebra as LA
 
 {- This program create syntactic and semantic parsing results for Chinese sentences. Please run MySQL Workbench or other similiar tools, connecting MySQL database 'ccg4c', and querying table 'corpus' for revising parts of speech as well as CCG syntactic types, and the MySQL server is running on a certain compute in Hua-shui campus. The program includes commands for parsing sentences and storing results in database 'ccg4c', as following.
     ?   Display this message.
@@ -689,7 +691,7 @@ doSearchInTreebank username = do
     putStrLn " t5 -> Display parsing trees in which include given grammatic rule."
     putStrLn " t6 -> Display parsing trees in which include given phrasal structure."
     putStrLn " t7 -> Display parsing trees in which include given syntactic category."
-    putStrLn " t8 -> To do."
+    putStrLn " t8 -> Get serial_num list indicating those parsing trees which include given semanctic component"
     putStrLn " s1 -> ...."
     putStrLn " s2 -> ...."
     putStrLn " 0 -> Go back to the upper layer"
@@ -866,10 +868,15 @@ doExperiments username = do
     putStrLn " 6 -> Test getCanonicalStrOfSimpleType in Module CL"
     putStrLn " 7 -> Test isStrOfLambdaTerm in Module CL"
     putStrLn " 8 -> Test getLTermFromSimpleType in Module CL"
-    putStrLn " 9 -> Test getCLTermFromLambdaTerm in Module CL"
+    putStrLn " 9 -> Test getCLTermFromLambdaTerm and other similar functions in Module CL"
+    putStrLn " A -> Test simToEmbedding in Module Utils"
+    putStrLn " B -> Test testGramAttr2Vec in Module Statistics"
+    putStrLn " C -> Test cate2Vec in Module Statistics"
+    putStrLn " D -> Test tag2Vec in Module Statistics"
+    putStrLn " E -> Test stru2Vec in Module Statistics"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -883,7 +890,12 @@ doExperiments username = do
                "6" -> doTestGetCanonicalStrOfSimpleType username
                "7" -> doTestIsStrOfLambdaTerm username
                "8" -> doTestGetLTermFromSimpleType username
-               "9" -> doTestGetCLTermFromLambdaTerm username
+               "9" -> doTestGetCLTermFromLambdaTermAndOtherWhere username
+               "A" -> doTestSimToEmbedding username
+               "B" -> doTestGramAttr2Vec username
+               "C" -> doTestCate2Vec username
+               "D" -> doTestTag2Vec username
+               "E" -> doTestStru2Vec username
              doExperiments username                            -- Rear recursion
 
 {- B.1 Parse the sentence indicated by serial_num, here 'username' has not been used.
@@ -1107,16 +1119,20 @@ doTestGetLTermFromSimpleType username = do
                 putStrLn $ "The corresponding lambda term: " ++ show term
         doTestGetLTermFromSimpleType username                               -- Rear recursion
 
-{- B.9 Test the function getCLTermFromLambdaTerm in Module CL.
+{- B.9 Test the function getCLTermFromLambdaTerm and other similar functions in Module CL.
  -}
-doTestGetCLTermFromLambdaTerm :: String -> IO ()
-doTestGetCLTermFromLambdaTerm username = do
+doTestGetCLTermFromLambdaTermAndOtherWhere :: String -> IO ()
+doTestGetCLTermFromLambdaTermAndOtherWhere username = do
     putStrLn " ? -> Display command list"
     putStrLn " 1 -> Input a string of simple type, from which a CL term is tried to construct"
     putStrLn " 2 -> Input a string of lambda term, from which a CL term is tried to construct"
+    putStrLn " 3 -> Input two strings of CL terms, from which two CL terms are constructed and juxtaposed"
+    putStrLn " 4 -> Input a string of CL term, return its canonical form"
+    putStrLn " 5 -> Input a string of CL term, return its reductive normal form"
+    putStrLn " 6 -> Input a string of CL term (not necessory to be canonical form), return its all subterms"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -1159,7 +1175,106 @@ doTestGetCLTermFromLambdaTerm username = do
                 putStrLn $ "  The lambda term: " ++ show lTerm
                 cLTerm <- getCLTermFromLambdaTerm lTerm
                 putStrLn $ "  The corresponding CL term: " ++ show cLTerm
-        doTestGetCLTermFromLambdaTerm username                -- Rear recursion
+          "3" -> do
+              confInfo <- readFile "Configuration"
+              let omitClauseK = read (getConfProperty "omitClauseK" confInfo) :: Bool
+              if omitClauseK
+                then putStrLn "[INFO] Omit clause (k)"
+                else putStrLn "[INFO] Do not omit clause (k)"
+              c1Str <- getInputUntil "Please input the string of first CL term (c1): " (isStringOfCLTerm . termStr2ItsCanonicalForm False)
+              c2Str <- getInputUntil "Please input the string of second CL term (c2): " (isStringOfCLTerm . termStr2ItsCanonicalForm False)
+              let c1 = (getTermFromStr . termStr2ItsCanonicalForm False) c1Str
+                  c2 = (getTermFromStr . termStr2ItsCanonicalForm False) c2Str
+                  c3 = JuxTerm c1 c2
+                  c4 = reduct 0 10 c3
+              putStrLn $ "  (c1 c2) = " ++ show c3
+              putStrLn $ "  reduced (c1 c2) = " ++ show c4
+          "4" -> do
+              confInfo <- readFile "Configuration"
+              let omitClauseK = read (getConfProperty "omitClauseK" confInfo) :: Bool
+              if omitClauseK
+                then putStrLn "[INFO] Omit clause (k)"
+                else putStrLn "[INFO] Do not omit clause (k)"
+              c1Str <- getInputUntil "Please input the string of a CL term (c1): " (isStringOfCLTerm . termStr2ItsCanonicalForm False)
+              let c1 = termStr2ItsCanonicalForm False c1Str
+              putStrLn $ "  Canonical form: " ++ c1
+          "5" -> do
+              confInfo <- readFile "Configuration"
+              let omitClauseK = read (getConfProperty "omitClauseK" confInfo) :: Bool
+              if omitClauseK
+                then putStrLn "[INFO] Omit clause (k)"
+                else putStrLn "[INFO] Do not omit clause (k)"
+              let maxReductStepNum = read (getConfProperty "maxReductStepNum" confInfo) :: Int
+              putStrLn $ "[INFO] Maximal reduction step number = " ++ show maxReductStepNum
+              c1Str <- getInputUntil "Please input the string of a CL term (c1): " (isStringOfCLTerm . termStr2ItsCanonicalForm False)
+              let c1 = (getTermFromStr . termStr2ItsCanonicalForm False) c1Str
+              let c2 = reduct 0 maxReductStepNum c1
+              putStrLn $ "  Normal form: " ++ show c2
+          "6" -> do
+              confInfo <- readFile "Configuration"
+              let omitClauseK = read (getConfProperty "omitClauseK" confInfo) :: Bool
+              if omitClauseK
+                then putStrLn "[INFO] Omit clause (k)"
+                else putStrLn "[INFO] Do not omit clause (k)"
+              let maxReductStepNum = read (getConfProperty "maxReductStepNum" confInfo) :: Int
+              putStrLn $ "[INFO] Maximal reduction step number = " ++ show maxReductStepNum
+              c1Str <- getInputUntil "Please input the string of a CL term (c1): " (isStringOfCLTerm . termStr2ItsCanonicalForm False)
+              let c1 = (getTermFromStr . termStr2ItsCanonicalForm False) c1Str
+              let c2 = reduct 0 maxReductStepNum c1
+              putStrLn $ "  Normal form (c2): " ++ show c2
+              let subTerms1 = subTermOfTerm c1
+              let subTerms2 = subTermOfTerm c2
+              putStrLn $ " c1 subTerms: " ++ show subTerms1
+              putStrLn $ " c2 subTerms: " ++ show subTerms2
+        doTestGetCLTermFromLambdaTermAndOtherWhere username                -- Rear recursion
+{- B.A Test the function simToEmbedding in Module Utils.
+ -}
+doTestSimToEmbedding :: String -> IO ()
+doTestSimToEmbedding username = testSimToEmbedding
+
+{- B.B Test the function testGramAttr2Vec in Module Statistics.
+ -}
+doTestGramAttr2Vec :: String -> IO ()
+doTestGramAttr2Vec username = testGramAttr2Vec
+
+{- B.C Test the function cate2Vec in Module Statistics.
+ -}
+doTestCate2Vec :: String -> IO ()
+doTestCate2Vec username = do
+    let prompt = " Lookup 'np' in embedding matrix returned from 'cate2Vec', are you sure? [y/n] (RETURN for 'y'): "
+    answer <- getLineUntil prompt ["y","n"] True
+    if answer == "y"
+      then do
+        embMat <- cate2Vec
+        let npVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup npCate embMat
+        putStrLn $ "Embedding vector of category 'np': " ++ listToString (map (printf "%.4f" :: Double -> String) npVec)
+      else putStr ""
+
+{- B.D Test the function tag2Vec in Module Statistics.
+ -}
+doTestTag2Vec :: String -> IO ()
+doTestTag2Vec username = do
+    let prompt = " Lookup '>' in embedding matrix returned from 'tag2Vec', are you sure? [y/n] (RETURN for 'y'): "
+    answer <- getLineUntil prompt ["y","n"] True
+    if answer == "y"
+      then do
+        embMat <- tag2Vec
+        let appFVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup ">" embMat
+        putStrLn $ "Embedding vector of grammatic rule '>': " ++ listToString (map (printf "%.4f" :: Double -> String) appFVec)
+      else putStr ""
+
+{- B.E Test the function stru2Vec in Module Statistics.
+ -}
+doTestStru2Vec :: String -> IO ()
+doTestStru2Vec username = do
+    let prompt = " Lookup 'AHn' in embedding matrix returned from 'stru2Vec', are you sure? [y/n] (RETURN for 'y'): "
+    answer <- getLineUntil prompt ["y","n"] True
+    if answer == "y"
+      then do
+        embMat <- stru2Vec
+        let aHnVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "AHn" embMat
+        putStrLn $ "Embedding vector of phrasal structure 'AHn': " ++ listToString (map (printf "%.4f" :: Double -> String) aHnVec)
+      else putStr ""
 
 -- C. Various maintenance tools.
 doMaintenance :: String -> IO ()
@@ -1175,9 +1290,11 @@ doMaintenance username = do
     putStrLn " 8 -> Copy pure-CCG marked sentences indicated by serial_num range to column cate_sent2"
     putStrLn " 9 -> Change grammar rule tags from CCG-C2 into pure-CCG"
     putStrLn " A -> Create semantic combinator for every clause in a treebank"
+    putStrLn " B -> Create semantic context for every word in clauses"
+    putStrLn " C -> Create intersion juxtapositions for every clause in a treebank"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -1193,6 +1310,8 @@ doMaintenance username = do
                "8" -> copyCate                                 -- Defined in Module 'Corpus'
                "9" -> removeCrossFlagFromTagInTreeAndScript    -- Defined in Module 'Maintain'
                "A" -> doCreateSemanticCombinatorForClause      -- Defined in Module 'Maintain'
+               "B" -> doCreateSemanticContextForWord           -- Defined in Module 'Maintain'
+               "C" -> doCreateIntersionJuxtapositionForClause  -- Defined in Module 'Maintain'
              doMaintenance username                            -- Rear recursion
 
 -- C_1. Rearrange index column in a certain table.
@@ -1430,6 +1549,14 @@ doCountPriorAmbigAtSGSamples username = countPriorAmbigAtSGSamples
 -- C_A. Create semantic combinator of every clause in a treebank.
 doCreateSemanticCombinatorForClause :: IO ()
 doCreateSemanticCombinatorForClause = createSemanCombForEveryClau
+
+-- C_B. Create semantic context of every word in a treebank.
+doCreateSemanticContextForWord :: IO ()
+doCreateSemanticContextForWord = createSemanContextForEveryWord
+
+-- C_C. Create intersion juxtaposition for every clause in a treebank.
+doCreateIntersionJuxtapositionForClause :: IO ()
+doCreateIntersionJuxtapositionForClause = createIntersionJuxtapositionForEveryClau
 
 -- D. 测试聚类模块的相关函数.
 doClustering :: String -> IO ()

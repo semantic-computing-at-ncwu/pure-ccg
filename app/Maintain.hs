@@ -20,7 +20,9 @@ module Maintain (
     countClausalAmbigAtSGSamples,             -- IO ()
     countPriorAmbigAtSGSamples,               -- IO ()
     removeCrossFlagFromTagInTreeAndScript,    -- IO ()
-    createSemanCombForEveryClau,              -- String -> IO ()
+    createSemanCombForEveryClau,              -- IO ()
+    createSemanContextForEveryWord,           -- IO ()
+    createIntersionJuxtapositionForEveryClau, -- IO ()
     ) where
 
 import Control.Monad
@@ -38,6 +40,7 @@ import Output
 import Corpus
 import Category
 import Phrase
+import CL
 import Utils
 
 {- Set attribue 'ipc' of certain rows as an user of this software. In table corpus,
@@ -386,7 +389,7 @@ removeCrossFlagFromTagInTreeAndScript = do
               else do
                 let rows2Memory = map (\row -> (fst3 row, (readTrees . snd3) row, (readScripts . thd3) row)) rowsParsed     -- [(SendIdx, [Tree], [Script])]
 --                putStrLn "removeCrossFlagFromTagInTreeAndScript: Original trees and scripts: "
---                mapM_ (\row -> (putStr "(" >>= \_ -> putStr (show (fst3 row)) >>= \_ -> putStr "," >>= \_ -> showTrees (snd3 row) >>= \_ -> putStr "," >>= \_ -> showScripts (thd3 row) >>= \_ -> putStrLn ")")) rows2Memory
+--                mapM_ (\row -> (putStr "(" >>= \_ -> putStr (show (fst3 row)) >>= \_ -> putStr "," >>= \_ -> showClauWords ((readClauWordFromTree . snd3) row) >>= \_ -> putStr "," >>= \_ -> showScripts (thd3 row) >>= \_ -> putStrLn ")")) rows2Memory
 
                 let rows2Memory' = map (\row -> (fst3 row, (removeCrossFlagFromTagInTree4ASent . snd3) row, (removeCrossFlagFromTagInScript4ASent . thd3) row)) rows2Memory
 --                putStrLn "removeCrossFlagFromTagInTreeAndScript: Slash purified trees and scripts: "
@@ -465,6 +468,129 @@ createSemanCombForEveryClau = do
 
                 let rows' = map (\row -> [(toMySQLText . nClauSemanCombToString . snd) row, (toMySQLInt32 . fst) row]) sentSemanCombs'
                 let sqlstat1 = DS.fromString $ "update " ++ tree_target ++ " set seman_comb = ? where serial_num = ?"
+                oks <- executeMany conn sqlstat1 rows'
+                putStrLn $ show (length oks) ++ " rows have been updated."      -- Only rows with their values changed are affected rows.
+
+            close conn                       -- Close the connection.
+          else putStrLn "Command was cancelled."
+
+-- Create semantic context for every word in a certain treebank, then store them into a given word-semantic table.
+createSemanContextForEveryWord :: IO ()
+createSemanContextForEveryWord = do
+    confInfo <- readFile "Configuration"
+    let tree_target = getConfProperty "tree_target" confInfo            -- For an example, treebank_by_script_with_semantics_not_reductive_20260129
+    putStrLn $ "tree_target: " ++ tree_target
+    putStrLn $ "This table should have Field 'word_context'. "
+
+    putStr "Please input serial_num of start sentence: "
+    line1 <- getLine
+    let startSn = read line1 :: Int
+    putStr "Please input serial_num of end sentence: "
+    line2 <- getLine
+    let endSn = read line2 :: Int
+
+    if startSn > endSn
+      then putStrLn "No sentence is designated."
+      else do
+        putStrLn $ "startSn: " ++ line1
+        putStrLn $ "endSn: " ++ line2
+        contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
+        if contOrNot == "c"
+          then do
+            conn <- getConn
+            let sqlstat = DS.fromString $ "select serial_num, tree, seman_comb from " ++ tree_target ++ " where serial_num >= ? && serial_num <= ?"
+            stmt <- prepareStmt conn sqlstat
+            (_, is) <- queryStmt conn stmt [toMySQLInt32 startSn, toMySQLInt32 endSn]     -- read rows whose serial_nums are in designated range.
+            rows <- readStreamByInt32TextText [] is                             -- [(SendIdx, TreesStr, CombinatorsStr)]
+            let rowsParsed = [x | x <- rows, snd3 x /= "[]"]                    -- After parsed, a row has non-empty Field 'tree'.
+            if (rowsParsed == [])
+              then putStrLn "createSemanContextForEveryWord: No sentence is asked to do this operation."
+              else do
+                let rows2Memory = map (\row -> (fst3 row, (readClauWordSemanFromTrees . readTrees . snd3) row, (readClauSemanCombs' . thd3) row)) rowsParsed
+                                                 -- [(SendIdx, [ClauWordSeman], [ClauSemanComb])]
+--                putStrLn "createSemanContextForEveryWord:"
+--                mapM_ (\row -> (putStr "(" >>= \_ -> putStr (show (fst3 row)) >>= \_ -> putStr "," >>= \_ -> (showClauWords . snd3) row >>= \_ -> putStr "," >>= \_ -> putStr ((nClauSemanCombToString . thd3) row) >>= \_ -> putStrLn ")")) rows2Memory
+
+                let sentIndices = map fst3 rows2Memory                          -- [SentIdx]
+                let sentClauWordSemans = map snd3 rows2Memory                   -- [[(ClauIdx, [Seman])]]
+                let sentClauSemanCombs = map thd3 rows2Memory                   -- [[(ClauIdx, Term)]]
+                let sentClauComb2WordSeman = map (\sent -> zip (fst sent) (snd sent)) $ zip sentClauSemanCombs sentClauWordSemans
+                                  -- [([(ClauIdx, Term)], [(ClauIdx, [Seman])])] => [([(ClauIdx, Term), (ClauIdx, [Seman])])]
+                let sentClauWordContexts = map (\sent -> map (\clau -> getClauWordSemanContext ((snd . fst) clau) (snd clau)) sent) sentClauComb2WordSeman
+                                                                                -- [[(ClauIdx, [(Seman, Term)])]]
+                let sentClauWordContextsReduct = map (\sent -> map (\clau -> (fst clau, map (\st -> (fst st, reduct 0 10 (snd st))) (snd clau))) sent) sentClauWordContexts
+                                                                                -- [[(ClauIdx, [(Seman, Term)])]]
+{-                putStrLn "  sentClauWordContext:"
+                mapM_ (\sent -> showSentClauWordSemanContext sent) sentClauWordContexts
+                putStrLn "  sentClauWordContextsReduct:"
+                mapM_ (\sent -> showSentClauWordSemanContext sent) sentClauWordContextsReduct
+ -}
+                let rowsData = zip3 sentClauWordContexts sentClauWordContextsReduct sentIndices
+                                                                                -- [([(ClauIdx, [(Seman, Term)])], [(ClauIdx, [(Seman, Term)])], SentIdx)]
+                let rows' = map (\row -> [(toMySQLText . sentClauWordSemanContextToString . fst3) row, (toMySQLText . sentClauWordSemanContextToString . snd3) row, (toMySQLInt32 . thd3) row]) rowsData
+                                                                                -- [(MySQLText, MySQLText, MySQLInt32)]
+                let sqlstat1 = DS.fromString $ "update " ++ tree_target ++ " set word_context = ?, word_context_reduct = ? where serial_num = ?"
+                oks <- executeMany conn sqlstat1 rows'
+                putStrLn $ show (length oks) ++ " rows have been updated."      -- Only rows with their values changed are affected rows.
+
+            close conn                       -- Close the connection.
+          else putStrLn "Command was cancelled."
+
+-- Create intersion juxtapositions for every clause in a certain treebank, then store them into a given database table.
+createIntersionJuxtapositionForEveryClau :: IO ()
+createIntersionJuxtapositionForEveryClau = do
+    confInfo <- readFile "Configuration"
+    let tree_target = getConfProperty "tree_target" confInfo            -- For an example, treebank_by_script_with_semantics_not_reductive_20260129
+    putStrLn $ "tree_target: " ++ tree_target
+    putStrLn $ "This table should have Field 'intersion juxtaposition'. "
+    let reduceOrNotStr = getConfProperty "reduceOrNot" confInfo
+    putStrLn $ "reduceOrNot: " ++ reduceOrNotStr
+    let reduceOrNot = read reduceOrNotStr :: Bool
+
+    putStr "Please input serial_num of start sentence: "
+    line1 <- getLine
+    let startSn = read line1 :: Int
+    putStr "Please input serial_num of end sentence: "
+    line2 <- getLine
+    let endSn = read line2 :: Int
+
+    if startSn > endSn
+      then putStrLn "No sentence is designated."
+      else do
+        putStrLn $ "startSn: " ++ line1
+        putStrLn $ "endSn: " ++ line2
+        contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
+        if contOrNot == "c"
+          then do
+            conn <- getConn
+            let sqlstat = DS.fromString $ "select serial_num, tree, seman_comb from " ++ tree_target ++ " where serial_num >= ? && serial_num <= ?"
+            stmt <- prepareStmt conn sqlstat
+            (_, is) <- queryStmt conn stmt [toMySQLInt32 startSn, toMySQLInt32 endSn]     -- read rows whose serial_nums are in designated range.
+            rows <- readStreamByInt32TextText [] is                             -- [(SendIdx, TreesStr, CombinatorsStr)]
+            let rowsParsed = [x | x <- rows, snd3 x /= "[]"]                    -- After parsed, a row has non-empty Field 'tree'.
+            if (rowsParsed == [])
+              then putStrLn "createIntersionJuxtapositionForEveryClau: No sentence is asked to do this operation."
+              else do
+                let rows2Memory = map (\row -> (fst3 row, (readClauWordSemanFromTrees . readTrees . snd3) row, (readClauSemanCombs' . thd3) row)) rowsParsed
+                                                 -- [(SendIdx, [ClauWordSeman], [ClauSemanComb])]
+--                putStrLn "createIntersionJuxtapositionForEveryClau:"
+--                mapM_ (\row -> (putStr "(" >>= \_ -> putStr (show (fst3 row)) >>= \_ -> putStr "," >>= \_ -> (showClauWords . snd3) row >>= \_ -> putStr "," >>= \_ -> putStr ((nClauSemanCombToString . thd3) row) >>= \_ -> putStrLn ")")) rows2Memory
+
+                let sentIndices = map fst3 rows2Memory                          -- [SentIdx]
+                let sentClauWordSemans = map snd3 rows2Memory                   -- [[(ClauIdx, [Seman])]]
+                let sentClauSemanCombs = map thd3 rows2Memory                   -- [[(ClauIdx, Term)]]
+                let sentClauComb2WordSeman = map (\sent -> zip (fst sent) (snd sent)) $ zip sentClauSemanCombs sentClauWordSemans
+                                  -- [([(ClauIdx, Term)], [(ClauIdx, [Seman])])] => [([(ClauIdx, Term), (ClauIdx, [Seman])])]
+                let sentClauIntersionJuxtapositions = map (\sent -> map (\clau -> getClauIntersionJuxtaposition reduceOrNot ((snd . fst) clau) (snd clau)) sent) sentClauComb2WordSeman
+                                                                                -- [[(ClauIdx, [Term])]]
+                putStrLn "  sentClauIntersionJuxtapositions:"
+                mapM_ (\sent -> putStrLn (show sent)) sentClauIntersionJuxtapositions
+
+                let rowsData = zip sentClauIntersionJuxtapositions sentIndices
+                                                                                -- [([(ClauIdx, [Term])], SentIdx)]
+                let rows' = map (\row -> [(toMySQLText . show . fst) row, (toMySQLInt32 . snd) row]) rowsData
+                                                                                -- [(MySQLText, MySQLInt32)]
+                let sqlstat1 = DS.fromString $ "update " ++ tree_target ++ " set intersion_juxtaposition = ? where serial_num = ?"
                 oks <- executeMany conn sqlstat1 rows'
                 putStrLn $ show (length oks) ++ " rows have been updated."      -- Only rows with their values changed are affected rows.
 

@@ -61,6 +61,11 @@ module CL (
     termSeq2Term',    -- [Term] -> Term
     curriedFuncForOnePara,  -- Term -> [Term] -> Int -> Term
     getTermFromStr,   -- String -> Term
+    isStringOfCLTerm, -- String -> Bool
+    termStr2SymbolList,     -- String -> [String]
+    symbolList2TermStr,     -- Int -> [String] -> String
+    termStr2ItsCanonicalForm,    -- String -> String
+    fstSubTermEndPos,       -- Int -> Int -> [String] -> Int
     sortTerms,   -- [Term] -> [Term]
     doCombAxiom,      -- Term -> (Term, Bool)
     oneStepReduct,    -- Term -> (Term, Bool)
@@ -101,6 +106,7 @@ module CL (
 import Utils
 import Data.List (isPrefixOf)
 import Data.List.Utils (replace)
+import Data.List.Split (split, oneOf, dropBlanks)
 import Data.Map (Map)
 import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
@@ -448,7 +454,7 @@ curriedFuncForOnePara xTerm paraTerm idx = termSeq2Term ((x' : take (idx - 1) pa
  -}
 getTermFromStr :: String -> Term
 getTermFromStr "" = nullTerm
-getTermFromStr [x] = ConstTerm [x]
+getTermFromStr [x] = ConstTerm [x]                -- Only one character
 getTermFromStr str
     | head str /= '(' && indexOfDelimiter 0 0 0 ' ' str == -1 = ConstTerm str
     | head str == '(' && last str == ')' && spaceIdx > 0 && spaceIdx < length str' - 1 = JuxTerm (getTermFromStr mStr) (getTermFromStr nStr)
@@ -458,6 +464,114 @@ getTermFromStr str
     spaceIdx = indexOfDelimiter 0 0 0 ' ' str'
     mStr = take spaceIdx str'
     nStr = drop (spaceIdx + 1) str'
+
+{- Decide a string whether it is the string of a CL term.
+ - (1) A string satisfies the following conditions is well-formatted: Starts with not '(' and contain no space character.
+ - (2) A string satisfies the following conditions is well-formatted: Starts with '(', ends with ')',
+ -     and contains two juxtapositioned string which are well-formatted and seperated by one space character;
+ - (3) Other strings except the above are not well-formatted.
+ -}
+isStringOfCLTerm :: String -> Bool
+isStringOfCLTerm "" = False
+isStringOfCLTerm [x] = True
+isStringOfCLTerm str
+    | head str /= '(' && indexOfDelimiter 0 0 0 ' ' str == -1 = True
+    | head str == '(' && last str == ')' && spaceIdx > 0 && spaceIdx < length str' - 1 = isStringOfCLTerm mStr && (isStringOfCLTerm nStr)
+    | otherwise = False
+    where
+    str' = init (tail str)
+    spaceIdx = indexOfDelimiter 0 0 0 ' ' str'
+    mStr = take spaceIdx str'
+    nStr = drop (spaceIdx + 1) str'
+
+{- Convert a string of CL term to a list, in which '(', ')' and primitive term are stored sequentially.
+ - Primitive term: ["x1"]
+ - Compound term: ["(","x1","x2",")"], ["(","x1","(","x2","x3",")",")"] or ["(","(","x1","x2",")","(","x3","x4",")",")"]
+ -}
+termStr2SymbolList :: String -> [String]
+termStr2SymbolList str = filter (\x -> x /= "" && x /= " ") $ split (oneOf "( )") str
+
+{- Concat strings in a list into a string, where insert single space string between every two strings which are not brackets.
+ - ["x0"] -> "x0"
+ - ["x0", "x1"] -> "x0 x1"
+ - ["(","x0","(", "(","x1", "x2",")","x3",")",")"] => "(x0 ((x1 x2) x3))"
+ - ["x0","x1","x2"] -> "x0 x1 x2"
+ - lastSymbol: 1 for a term name, 2 for "(", 3 for ")", and 0 for initial value.
+ -}
+symbolList2TermStr :: Int -> [String] -> String
+symbolList2TermStr _ [] = ""                                   -- nullTerm
+symbolList2TermStr lastSymbol (s:ss)
+    | lastSymbol == 0 && notElem s ["(",")"] = s ++ symbolList2TermStr 1 ss
+    | lastSymbol == 0 && s == "(" = s ++ symbolList2TermStr 2 ss
+    | lastSymbol == 0 && s == ")" = error "symbolList2TermStr: Start from ')'"
+    | lastSymbol == 1 && notElem s ["(",")"] = " " ++ s ++ symbolList2TermStr 1 ss
+    | lastSymbol == 1 && s == "(" = " " ++ s ++ symbolList2TermStr 2 ss
+    | lastSymbol == 1 && s == ")" = s ++ symbolList2TermStr 3 ss
+    | lastSymbol == 2 && notElem s ["(",")"] = s ++ symbolList2TermStr 1 ss
+    | lastSymbol == 2 && s == "(" = s ++ symbolList2TermStr 2 ss
+    | lastSymbol == 2 && s == ")" = error "symbolList2TermStr: Meet '()'"
+    | lastSymbol == 3 && notElem s ["(",")"] = " " ++ s ++ symbolList2TermStr 1 ss
+    | lastSymbol == 3 && s == "(" = " " ++ s ++ symbolList2TermStr 2 ss
+    | lastSymbol == 3 && s == ")" = s ++ symbolList2TermStr 3 ss
+    | otherwise = error "symbolList2TermStr: Impossible."
+
+{- Convert a CL term string to its canonical form, namely in which there is no bracket omitted.
+ - Examples:
+ -       "x0" -> "x0"
+ -       "x0 x1" -> "(x0 x1)"
+ -       "(x0 x1)" -> "(x0 x1)"
+ -       "(x0 x1) x2" -> "((x0 x1) x2)"
+ -       "(((x0 x1) x2) x3)" -> "(((x0 x1) x2) x3)"
+ -       "(x0 x1 x2)" -> "((x0 x1) x2)"
+ - fstTermCanonicalized: True for that first subterm has been canonicalized, and False for not. Its initial value is False.
+ - Algo.:
+ -     (1) if it is the string of a primitive subterm, then return itself.
+ -     (2) if it is the string of a compound subterm as "(M N)" or "(M N P)",  then recursively computing of its inner part, namely "M N" or "M N P".
+ -     (3) if it is the sequence of subterms as "M N P", and
+ -            subterm M has not been canonicalized, then recursively computing of "(M_Canonical_Form, M_Canonical_Form) P"
+ -            subterm M has been canonicalized, then recursively computing of "(M, M_Canonical_Form) P"
+ -}
+termStr2ItsCanonicalForm :: Bool -> String -> String
+termStr2ItsCanonicalForm fstTermCanonicalized termStr
+    | endPos1 == 1 && endPos2 == 0 = termStr                                    -- "x0"
+    | endPos1 > 1 && endPos2 == 0 && not fstTermCanonicalized = termStr2ItsCanonicalForm False (init (tail termStr))      -- "(x0 x1)"
+    | endPos1 > 1 && endPos2 == 0 && fstTermCanonicalized = termStr             -- "(x0 x1)"
+    | not fstTermCanonicalized = termStr2ItsCanonicalForm True ("(" ++ fstSubTermCanonicalForm ++ " " ++ sndSubTermCanonicalForm ++ ")" ++ (symbolList2TermStr 0 tailSubTermSymbList2))
+                                                                                -- "x0 x1", "x0 (x1 x2) x3"
+    | otherwise = termStr2ItsCanonicalForm True ("(" ++ fstSubTermStr ++ " " ++ sndSubTermCanonicalForm ++ ")" ++ (symbolList2TermStr 0 tailSubTermSymbList2))
+    where
+    symbolList = termStr2SymbolList termStr                                     -- [String]
+    endPos1 = (+1) $ fromMaybe (-1) $ fstSubTermEndPos 0 0 symbolList           -- If first subterm exists, return end position; Otherwise return 0.
+    fstSubTermSymbList = take endPos1 symbolList                                -- [String]
+    fstSubTermStr = symbolList2TermStr 0 fstSubTermSymbList                     -- String
+    fstSubTermCanonicalForm = termStr2ItsCanonicalForm False fstSubTermStr      -- String
+    tailSubTermSymbList = drop endPos1 symbolList                               -- [String]
+    endPos2 = (+1) $ fromMaybe (-1) $ fstSubTermEndPos 0 0 tailSubTermSymbList  -- If second subterm exists, return end position; Otherwise return 0.
+    sndSubTermSymbList = take endPos2 tailSubTermSymbList                       -- [String]
+    sndSubTermCanonicalForm = termStr2ItsCanonicalForm False (symbolList2TermStr 0 sndSubTermSymbList)
+    tailSubTermSymbList2 = drop endPos2 tailSubTermSymbList                     -- [String]
+
+{- get the end position of first subterm in a Term string.
+ - "x0" -> 0
+ - "x0 x1" -> 0
+ - "( x0 x1 ) x2" -> 3
+ - "( ( x0 x1 ) x2 )" -> 6
+ - "( x0 x1 x2 )" -> 4
+ - To remember how many left brackets have been met, the integer nlb is needed.
+ - The index is initialized as 0.
+ -}
+fstSubTermEndPos :: Int -> Int -> [String] -> Maybe Int
+fstSubTermEndPos nlb i symbolList
+    | i >= length symbolList = Nothing                                          -- No first subterm is found
+    | cursor /= "(" && cursor /= ")" && nlb == 0 = Just i
+    | cursor /= "(" && cursor /= ")" && nlb /= 0 = fstSubTermEndPos nlb (i+1) symbolList
+    | cursor == "(" = fstSubTermEndPos (nlb+1) (i+1) symbolList
+    | cursor == ")" && nlb == 1 = Just i
+    | cursor == ")" && nlb > 1 = fstSubTermEndPos (nlb-1) (i+1) symbolList
+    | cursor == ")" && nlb == 0 = Nothing                                       -- Brackets are NOT paired
+    | otherwise = error $ "fstSubTermEndPos: Impossible."
+    where
+    cursor = symbolList!!i
 
 {- Sort terms according to non-descending order.
  - It should be replaced with function 'sort' in Data.List.
@@ -509,7 +623,6 @@ oneStepReduct (JuxTerm t1 t2)
       (res, flag) = doCombAxiom (JuxTerm t1 t2)
       (res1, flag1) = oneStepReduct t1
       (res2, flag2) = oneStepReduct t2
-
 
 {- Reduct a term till there is no redex inside it, or a maximal number of reduction steps is reached.
  - Even if a term has a normal form, reducting this term might not terminate.

@@ -42,6 +42,10 @@ dependencies:
 - regex-base
 - array
 - mtl
+- split
+- vector
+- aeson
+- filepath
 
 library:
   source-dirs: src
