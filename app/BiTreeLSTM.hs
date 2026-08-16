@@ -2,19 +2,101 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 -- Binary Tree-LSTM 句法合并分类模型
--- 任务：输入一对语法树(LeftTree, RightTree)，预测 ActLp / ActRp / ActNoth 三分类
--- 完整前向 + 递归反向传播BP + JSON样本读写
-module BiTreeLSTM where
+-- 修复点：
+-- 1. emptyNodeCache where作用域错误
+-- 2. backwardNode dEmbLSTM 前向引用问题
+-- 3. 梯度空向量V.empty改为同维度零张量，避免zip越界崩溃
+-- 4. zeroGrad传参硬编码0改为从参数读取真实维度
+-- 5. LSTM反向传播补全遗忘门embOut梯度贡献
+-- 6. dLdnewC tanh导数链式推导修正
+-- 7. 训练循环改为尾递归防止栈溢出
+-- 8. 投影层BP返回dL/d原始特征梯度，完善链式闭环
+-- 9. 优化叶子节点判定逻辑，避免Eq递归整树比较
+-- 10. 遗忘门偏置初始化置1，缓解LSTM梯度消失
+module BiTreeLSTM (
+    ParseAction(..),
+    actionToOneHot,
+    vecToAction,
+    NodeFeat,
+    SyntaxTree(..),
+    RawSyntaxTree,
+    vecToList,
+    listToVec,
+    TrainSample,
+    SampleRecord(..),
+    sampleFromRecord,
+    recordFromSample,
+    loadSamplesJSON,
+    saveSamplesJSON,
+    vecAdd,
+    vecSub,
+    vecMul,
+    vecScale,
+    matVecMul,
+    matAdd,
+    matScale,
+    matOuter,
+    matTrans,
+    sigmoid,
+    sigmoidDeriv,
+    vecTanh,
+    tanhDeriv,
+    softmax,
+    crossEntropy,
+    NetParam(..),
+    netHidDim,
+    netProjDim,
+    NetGrad,
+    LSTMState(..),
+    emptyLSTMState,
+    NodeCache(..),
+    TreeFwdResult(..),
+    randVec,
+    randMat,
+    initNetParam,
+    zeroGrad,
+    gradAdd,
+    gradScale,
+    updateParam,
+    projectRawFeat,
+    treeForwardCached,
+    backwardNode,
+    backwardTree,
+    sampleForwardLossGrad,
+    trainStep,
+    batchTrainStep,
+    mkLeaf,
+    mkNonLeaf,
+    trainLoop,
+    biTreePhraSyn02SyntaxTreeNodeFeat,    -- BiTree PhraSyn0 -> SyntaxTree NodeFeat
+    buildSampleSet,
+    testPipeline
+) where
 
 import qualified Data.Vector as V
+import qualified System.IO.Streams as S
 import Data.Vector (Vector)
 import System.Random (randomRIO)
 import Data.Foldable (sum)
+import Data.Maybe
+import Data.Map (Map)
+import qualified Data.Map.Strict as Map
 import GHC.Generics (Generic)
 import Control.Exception (catch, SomeException)
 import System.IO (readFile, writeFile)
+import qualified Data.String as DS
+import Database.MySQL.Base
+import Database
+import AmbiResol
+import Category (Category(..))
+import Phrase (Tag, PhraStru)
+import Statistics (cate2Vec, tag2Vec, stru2Vec)
+import Data.Tuple.Utils
+import Utils
 
 -- JSON 相关
 import Data.Aeson (ToJSON(..), FromJSON(..), withText, withObject, (.:), (.:?), object, (.=), encode, decodeFileStrict)
@@ -34,11 +116,13 @@ actionToOneHot ActRp   = V.fromList [0.0, 1.0, 0.0]
 actionToOneHot ActNoth = V.fromList [0.0, 0.0, 1.0]
 
 vecToAction :: Vector Double -> ParseAction
-vecToAction v = case V.maxIndex v of
-  0 -> ActLp
-  1 -> ActRp
-  2 -> ActNoth
-  _ -> ActNoth
+vecToAction v
+  | V.length v /= 3 = ActNoth
+  | otherwise = case V.maxIndex v of
+      0 -> ActLp
+      1 -> ActRp
+      2 -> ActNoth
+      _ -> ActNoth
 
 -- JSON 实例
 instance ToJSON ParseAction where
@@ -53,7 +137,7 @@ instance FromJSON ParseAction where
     "Noth" -> pure ActNoth
     _      -> fail $ "Unknown action string: " ++ T.unpack t
 
--- ===================== 语法树定义：只保留泛型 SyntaxTree a =====================
+-- ===================== 语法树定义 =====================
 type NodeFeat = Vector Double
 
 data SyntaxTree a = EmptySTree
@@ -61,9 +145,9 @@ data SyntaxTree a = EmptySTree
                       { nodeData :: a
                       , stLeft  :: SyntaxTree a
                       , stRight :: SyntaxTree a
-                      } deriving (Show)
+                      , stIsLeaf :: Bool  -- 新增显式叶子标记，O(1)判断
+                      } deriving (Show, Eq)
 
--- 原始输入树：不带缓存，承载 NodeFeat
 type RawSyntaxTree = SyntaxTree NodeFeat
 
 -- JSON 辅助：向量转列表
@@ -76,11 +160,12 @@ listToVec = V.fromList
 -- RawSyntaxTree JSON序列化实例
 instance ToJSON RawSyntaxTree where
   toJSON EmptySTree = object ["type" .= ("empty" :: T.Text)]
-  toJSON STreeNode{nodeData=feat, stLeft=l, stRight=r} = object
+  toJSON STreeNode{nodeData=feat, stLeft=l, stRight=r, stIsLeaf=isL} = object
     [ "type" .= ("node" :: T.Text)
     , "feat" .= vecToList feat
     , "left" .= l
     , "right" .= r
+    , "is_leaf" .= isL
     ]
 
 instance FromJSON RawSyntaxTree where
@@ -92,7 +177,8 @@ instance FromJSON RawSyntaxTree where
         featLst <- o .: "feat"
         left <- o .: "left"
         right <- o .: "right"
-        pure $ STreeNode (listToVec featLst) left right
+        isL <- o .: "is_leaf"
+        pure $ STreeNode (listToVec featLst) left right isL
       _ -> fail $ "Bad SyntaxTree type tag: " ++ T.unpack typ
 
 -- 训练样本：((左树,右树),目标动作)
@@ -125,22 +211,21 @@ recordFromSample :: TrainSample -> SampleRecord
 recordFromSample ((l,r),a) = SampleRecord l r a
 
 -- ===================== JSON 文件读写模块 =====================
--- 加载JSON样本文件
 loadSamplesJSON :: FilePath -> IO [TrainSample]
 loadSamplesJSON path = do
-  mbs <- decodeFileStrict path
-  case mbs of
-    Nothing -> error $ "JSON解析失败：" ++ path
+  res <- catch (decodeFileStrict path)
+          (\(_ :: SomeException) -> pure Nothing)
+  case res of
+    Nothing -> error $ "JSON解析失败或文件不存在：" ++ path
     Just (rs :: [SampleRecord]) -> pure $ map sampleFromRecord rs
 
--- 保存样本到JSON文件
 saveSamplesJSON :: FilePath -> [TrainSample] -> IO ()
 saveSamplesJSON path samples = do
   let recs = map recordFromSample samples
       dat = encode recs
   BL.writeFile path dat
 
--- ===================== 向量数学工具 =====================
+-- ===================== 向量矩阵数学工具 =====================
 vecAdd :: Vector Double -> Vector Double -> Vector Double
 vecAdd = V.zipWith (+)
 
@@ -166,14 +251,16 @@ matOuter :: Vector Double -> Vector Double -> Vector (Vector Double)
 matOuter x y = V.map (\xi -> V.map (*xi) y) x
 
 matTrans :: Vector (Vector Double) -> Vector (Vector Double)
-matTrans mat =
-    let
-      colLen = V.length (head mat)
-    in V.generate colLen $ \row -> V.map (! row) mat
+matTrans mat
+  | V.null mat = V.empty
+  | otherwise =
+      let colLen = V.length (V.head mat)
+      in V.generate colLen $ \row -> V.map (\x -> x V.! row) mat
 
 -- 激活函数与导数
 sigmoid :: Double -> Double
 sigmoid x = 1.0 / (1.0 + exp (-x))
+
 vecSigmoid :: Vector Double -> Vector Double
 vecSigmoid = V.map sigmoid
 
@@ -190,17 +277,21 @@ softmax :: Vector Double -> Vector Double
 softmax vec =
   let expVec = V.map exp vec
       sumExp = V.sum expVec
-  in V.map (/sumExp) expVec
+      sumExpClip = max sumExp 1e-12
+  in V.map (/sumExpClip) expVec
 
-{- 'label' are real probabilities of all events.
- - 'pred' are predictive probabilities of all events.
- -}
 crossEntropy :: Vector Double -> Vector Double -> Double
-crossEntropy pred label = - sum (V.zipWith (\p l -> l * log (p + 1e-8)) pred label)
+crossEntropy pred label =
+  - sum (V.zipWith (\p l -> l * log (max p 1e-8)) pred label)
 
 -- ===================== 网络参数 & 梯度结构 =====================
 data NetParam = NetParam
-  { embWeight :: Vector (Vector Double)
+  { leafProjW    :: Vector (Vector Double)  -- projDim × leafRawDim
+  , leafProjB    :: Vector Double           -- projDim
+  , nonLeafProjW :: Vector (Vector Double)  -- projDim × nonLeafRawDim
+  , nonLeafProjB :: Vector Double           -- projDim
+
+  , embWeight :: Vector (Vector Double)
   , embBias   :: Vector Double
 
   , lstmInpW     :: Vector (Vector Double)
@@ -219,7 +310,12 @@ data NetParam = NetParam
   , clsBias    :: Vector Double
   } deriving (Show)
 
--- 梯度与参数同构
+netHidDim :: NetParam -> Int
+netHidDim NetParam{embWeight=w} = V.length w
+
+netProjDim :: NetParam -> Int
+netProjDim NetParam{leafProjW=w} = V.length w
+
 type NetGrad = NetParam
 
 data LSTMState = LSTMState
@@ -227,13 +323,13 @@ data LSTMState = LSTMState
   , cState :: Vector Double
   } deriving (Show)
 
--- 'd' is the dimension, that is, the number of LSTM basic cells.
 emptyLSTMState :: Int -> LSTMState
 emptyLSTMState d = LSTMState (V.replicate d 0.0) (V.replicate d 0.0)
 
--- 前向缓存：单个节点所有中间变量，用于反向传播
+-- 前向计算缓存结构
 data NodeCache = NodeCache
   { ncFeat      :: NodeFeat
+  , ncProjFeat  :: Vector Double
   , ncEmbOut    :: Vector Double
   , ncInpGate   :: Vector Double
   , ncForgetLG  :: Vector Double
@@ -246,13 +342,42 @@ data NodeCache = NodeCache
   , ncLeftC     :: Vector Double
   , ncRightH    :: Vector Double
   , ncRightC    :: Vector Double
+  , ncIsLeaf    :: Bool
   } deriving (Show)
 
--- 整树前向同时返回缓存（用于BP）
+-- 修复：where作用域放到let内部
+emptyNodeCache :: Int -> Int -> NodeCache
+emptyNodeCache projDim hidDim =
+  let hidZero = V.replicate hidDim 0.0
+      projZero = V.replicate projDim 0.0
+  in NodeCache
+  { ncFeat = projZero        -- ??
+  , ncProjFeat = projZero
+  , ncEmbOut = hidZero
+  , ncInpGate = hidZero
+  , ncForgetLG = hidZero
+  , ncForgetRG = hidZero
+  , ncOutGate = hidZero
+  , ncCellCand = hidZero
+  , ncNewC = hidZero
+  , ncNewH = hidZero
+  , ncLeftH = hidZero
+  , ncLeftC = hidZero
+  , ncRightH = hidZero
+  , ncRightC = hidZero
+  , ncIsLeaf = True       -- ??
+  }
+
 data TreeFwdResult = TreeFwdResult
   { tfRootState :: LSTMState
-  , tfCacheTree :: SyntaxTree NodeCache  -- 带缓存的树
-  }
+  , tfCacheTree :: SyntaxTree NodeCache
+  } deriving (Show)
+
+-- ===================== 特征投影 =====================
+projectRawFeat :: NetParam -> Bool -> Vector Double -> Vector Double
+projectRawFeat NetParam{..} isLeaf rawFeat
+  | isLeaf    = vecAdd (matVecMul leafProjW rawFeat) leafProjB
+  | otherwise = vecAdd (matVecMul nonLeafProjW rawFeat) nonLeafProjB
 
 -- ===================== 参数初始化 =====================
 randVec :: Int -> IO (Vector Double)
@@ -261,14 +386,21 @@ randVec n = V.replicateM n (randomRIO (-0.1, 0.1))
 randMat :: Int -> Int -> IO (Vector (Vector Double))
 randMat r c = V.replicateM r (randVec c)
 
-{- 输入样本的嵌入式向量维度: featDim, 基于记忆单元的个数: hidDim
- - 输入权重矩阵：hidDim >< featDim
- - 输入门权重矩阵、左遗忘门权重矩阵、右遗忘门权重矩阵、输出门权重矩阵、细胞状态门权重矩阵：hidDim >< hidDim
- - 三分类神经元权重矩阵：3 >< (2 * hidDim)
- -}
-initNetParam :: Int -> Int -> IO NetParam
-initNetParam featDim hidDim = do
-  embW <- randMat hidDim featDim
+{-
+入参：
+leafRawDim    叶子原始特征维度
+nonLeafRawDim 非叶子原始特征维度
+projDim       投影统一维度
+hidDim        LSTM隐层维度
+-}
+initNetParam :: Int -> Int -> Int -> Int -> IO NetParam
+initNetParam leafRawDim nonLeafRawDim projDim hidDim = do
+  lProjW  <- randMat projDim leafRawDim
+  lProjB  <- randVec projDim
+  nlProjW <- randMat projDim nonLeafRawDim
+  nlProjB <- randVec projDim
+
+  embW <- randMat hidDim projDim
   embB <- randVec hidDim
 
   lstmIW  <- randMat hidDim hidDim
@@ -278,16 +410,19 @@ initNetParam featDim hidDim = do
   lstmCW  <- randMat hidDim hidDim
 
   lstmIB  <- randVec hidDim
-  lstmFBL <- randVec hidDim
-  lstmFBR <- randVec hidDim
+  -- LSTM遗忘门偏置初始化为1，缓解梯度消失
+  lstmFBL <- V.replicateM hidDim (pure 1.0)
+  lstmFBR <- V.replicateM hidDim (pure 1.0)
   lstmOB  <- randVec hidDim
   lstmCB  <- randVec hidDim
 
   clsW <- randMat 3 (2*hidDim)
   clsB <- randVec 3
 
-  return $ NetParam
-    { embWeight=embW, embBias=embB
+  return NetParam
+    { leafProjW=lProjW, leafProjB=lProjB
+    , nonLeafProjW=nlProjW, nonLeafProjB=nlProjB
+    , embWeight=embW, embBias=embB
     , lstmInpW=lstmIW, lstmForgetLW=lstmFWL, lstmForgetRW=lstmFWR
     , lstmOutW=lstmOW, lstmCellW=lstmCW
     , lstmInpB=lstmIB, lstmForgetLB=lstmFBL, lstmForgetRB=lstmFBR
@@ -295,12 +430,18 @@ initNetParam featDim hidDim = do
     , clsWeight=clsW, clsBias=clsB
     }
 
-zeroGrad :: Int -> Int -> NetGrad
-zeroGrad featDim hidDim =
+-- 零梯度构造器
+zeroGrad :: Int -> Int -> Int -> Int -> NetGrad
+zeroGrad leafRawDim nonLeafRawDim projDim hidDim =
   let zm r c = V.replicate r (V.replicate c 0.0)
       zv d = V.replicate d 0.0
   in NetParam
-    { embWeight = zm hidDim featDim, embBias = zv hidDim
+    { leafProjW    = zm projDim leafRawDim
+    , leafProjB    = zv projDim
+    , nonLeafProjW = zm projDim nonLeafRawDim
+    , nonLeafProjB = zv projDim
+
+    , embWeight = zm hidDim projDim, embBias = zv hidDim
     , lstmInpW=zm hidDim hidDim, lstmForgetLW=zm hidDim hidDim, lstmForgetRW=zm hidDim hidDim
     , lstmOutW=zm hidDim hidDim, lstmCellW=zm hidDim hidDim
     , lstmInpB=zv hidDim, lstmForgetLB=zv hidDim, lstmForgetRB=zv hidDim
@@ -314,7 +455,12 @@ gradAdd g1 g2 =
     addMat m1 m2 = matAdd m1 m2
     addVec v1 v2 = vecAdd v1 v2
   in NetParam
-    { embWeight = addMat (embWeight g1) (embWeight g2)
+    { leafProjW    = addMat (leafProjW g1) (leafProjW g2)
+    , leafProjB    = addVec (leafProjB g1) (leafProjB g2)
+    , nonLeafProjW = addMat (nonLeafProjW g1) (nonLeafProjW g2)
+    , nonLeafProjB = addVec (nonLeafProjB g1) (nonLeafProjB g2)
+
+    , embWeight = addMat (embWeight g1) (embWeight g2)
     , embBias = addVec (embBias g1) (embBias g2)
     , lstmInpW = addMat (lstmInpW g1) (lstmInpW g2)
     , lstmForgetLW = addMat (lstmForgetLW g1) (lstmForgetLW g2)
@@ -330,18 +476,42 @@ gradAdd g1 g2 =
     , clsBias = addVec (clsBias g1) (clsBias g2)
     }
 
-{- Learning rate: lr
- - Original matrix or vector: m or v
- - Gradient matrix or vector: gm or gv
- - Updated matrix or vector: m - lr * gm, or v - lr * gv
- -}
+gradScale :: Double -> NetGrad -> NetGrad
+gradScale scale g1 =
+   NetParam
+    { leafProjW    = matScale scale (leafProjW g1)
+    , leafProjB    = vecScale scale (leafProjB g1)
+    , nonLeafProjW = matScale scale (nonLeafProjW g1)
+    , nonLeafProjB = vecScale scale (nonLeafProjB g1)
+
+    , embWeight = matScale scale (embWeight g1)
+    , embBias = vecScale scale (embBias g1)
+    , lstmInpW = matScale scale (lstmInpW g1)
+    , lstmForgetLW = matScale scale (lstmForgetLW g1)
+    , lstmForgetRW = matScale scale (lstmForgetRW g1)
+    , lstmOutW = matScale scale (lstmOutW g1)
+    , lstmCellW = matScale scale (lstmCellW g1)
+    , lstmInpB = vecScale scale (lstmInpB g1)
+    , lstmForgetLB = vecScale scale (lstmForgetLB g1)
+    , lstmForgetRB = vecScale scale (lstmForgetRB g1)
+    , lstmOutB = vecScale scale (lstmOutB g1)
+    , lstmCellB = vecScale scale (lstmCellB g1)
+    , clsWeight = matScale scale (clsWeight g1)
+    , clsBias = vecScale scale (clsBias g1)
+    }
+
 updateParam :: Double -> NetGrad -> NetParam -> NetParam
 updateParam lr grad p =
   let
     updateMat m gm = matAdd m (matScale (-lr) gm)
     updateVec v gv = vecAdd v (vecScale (-lr) gv)
   in p
-    { embWeight = updateMat (embWeight p) (embWeight grad)
+    { leafProjW    = updateMat (leafProjW p) (leafProjW grad)
+    , leafProjB    = updateVec (leafProjB p) (leafProjB grad)
+    , nonLeafProjW = updateMat (nonLeafProjW p) (nonLeafProjW grad)
+    , nonLeafProjB = updateVec (nonLeafProjB p) (nonLeafProjB grad)
+
+    , embWeight = updateMat (embWeight p) (embWeight grad)
     , embBias = updateVec (embBias p) (embBias grad)
     , lstmInpW = updateMat (lstmInpW p) (lstmInpW grad)
     , lstmForgetLW = updateMat (lstmForgetLW p) (lstmForgetLW grad)
@@ -357,10 +527,17 @@ updateParam lr grad p =
     , clsBias = updateVec (clsBias p) (clsBias grad)
     }
 
--- ===================== 带缓存的前向传播 =====================
+-- ===================== 前向传播 =====================
 treeForwardCached :: NetParam -> RawSyntaxTree -> TreeFwdResult
-treeForwardCached _ EmptySTree = error "Empty tree cannot be encoded"
-treeForwardCached param st@(STreeNode feat l r) =
+treeForwardCached param EmptySTree =
+  let
+    hidDim = netHidDim param
+    projDim = netProjDim param
+    zeroVec = V.replicate hidDim 0.0
+    emptyCache = emptyNodeCache projDim hidDim
+  in TreeFwdResult (LSTMState zeroVec zeroVec) (STreeNode emptyCache EmptySTree EmptySTree False)
+
+treeForwardCached param st@STreeNode{nodeData=feat, stLeft=l, stRight=r, stIsLeaf=isLeafNode} =
   let
     leftRes = treeForwardCached param l
     rightRes = treeForwardCached param r
@@ -368,64 +545,101 @@ treeForwardCached param st@(STreeNode feat l r) =
     LSTMState hr cr = tfRootState rightRes
     NetParam{..} = param
 
-    embOut = vecAdd (matVecMul embWeight feat) embBias                          -- W * X + B
-    inpGate     = vecSigmoid $ vecAdd (matVecMul lstmInpW embOut) lstmInpB      -- Control signal of input gate
-    forgetLGate = vecSigmoid $ vecAdd (matVecMul lstmForgetLW hl) lstmForgetLB  -- Control signal of left forget gate
-    forgetRGate = vecSigmoid $ vecAdd (matVecMul lstmForgetRW hr) lstmForgetRB  -- Control signal of right forget gate
-    outGate     = vecSigmoid $ vecAdd (matVecMul lstmOutW embOut) lstmOutB      -- Control signal of output gate
-    cellCand    = vecTanh $ vecAdd (matVecMul lstmCellW embOut) lstmCellB       -- Cell state candidate 1
+    projFeat = projectRawFeat param isLeafNode feat
 
-    newC = vecAdd (vecMul forgetLGate cl) (vecMul forgetRGate cr) `vecAdd` vecMul inpGate cellCand   -- Cell state
-    newH = vecMul outGate (vecTanh newC)                                        -- Hidden state
+    embOut = vecAdd (matVecMul embWeight projFeat) embBias
+    inpGate     = vecSigmoid $ vecAdd (matVecMul lstmInpW embOut) lstmInpB
+    forgetLGate = vecSigmoid $ vecAdd (matVecMul lstmForgetLW hl) lstmForgetLB
+    forgetRGate = vecSigmoid $ vecAdd (matVecMul lstmForgetRW hr) lstmForgetRB
+    outGate     = vecSigmoid $ vecAdd (matVecMul lstmOutW embOut) lstmOutB
+    cellCand    = vecTanh $ vecAdd (matVecMul lstmCellW embOut) lstmCellB
+
+    newC = ((vecMul forgetLGate cl) `vecAdd` vecMul forgetRGate cr) `vecAdd` vecMul inpGate cellCand
+    newH = vecMul outGate (vecTanh newC)
 
     cache = NodeCache
-      { ncFeat = feat, ncEmbOut = embOut
+      { ncFeat = feat
+      , ncProjFeat = projFeat
+      , ncEmbOut = embOut
       , ncInpGate = inpGate, ncForgetLG = forgetLGate, ncForgetRG = forgetRGate
       , ncOutGate = outGate, ncCellCand = cellCand, ncNewC = newC, ncNewH = newH
       , ncLeftH = hl, ncLeftC = cl, ncRightH = hr, ncRightC = cr
+      , ncIsLeaf = isLeafNode
       }
-    cachedNode = STreeNode cache (tfCacheTree leftRes) (tfCacheTree rightRes)
+    cachedNode = STreeNode cache (tfCacheTree leftRes) (tfCacheTree rightRes) isLeafNode
   in TreeFwdResult (LSTMState newH newC) cachedNode
 
--- ===================== 完整反向传播 BP 实现 =====================
--- 返回：(梯度, dLdh_left, dLdc_left, dLdh_right, dLdc_right)
-backwardNode :: NetParam -> NodeCache -> Vector Double -> Vector Double -> (NetGrad, Vector Double, Vector Double, Vector Double, Vector Double)
+-- ===================== 反向传播核心节点BP（已全部修复） =====================
+-- 返回：(梯度, dLdh_left, dLdc_left, dLdh_right, dLdc_right, dLd_rawFeat)
+backwardNode :: NetParam -> NodeCache -> Vector Double -> Vector Double
+             -> (NetGrad, Vector Double, Vector Double, Vector Double, Vector Double, Vector Double)
 backwardNode NetParam{..} NodeCache{..} dLdh dLdc =
   let
-    -- dL/dnewC
-    dTanhC = tanhDeriv (vecTanh ncNewC)
-    dLdnewC = vecAdd (vecMul dLdh ncOutGate) (vecMul dLdc dTanhC)
+    -- 1. LSTM 细胞状态链式求导（修复tanh嵌套导数）
+    tanhNewC = vecTanh ncNewC
+    dTanhC = tanhDeriv tanhNewC
+    dh_dc = vecMul ncOutGate dTanhC
+    dLdnewC = vecAdd (vecMul dLdh dh_dc) dLdc
 
-    -- 各门梯度
-    dLdOutGate = vecMul dLdh (vecTanh ncNewC)
+    -- 输出门梯度
+    dLdOutGate = vecMul dLdh tanhNewC
     dRawOut = vecMul dLdOutGate (sigmoidDeriv ncOutGate)
 
+    -- 输入门梯度
     dLdInpGate = vecMul dLdnewC ncCellCand
     dRawInp = vecMul dLdInpGate (sigmoidDeriv ncInpGate)
 
+    -- 左遗忘门梯度
     dLdForgetL = vecMul dLdnewC ncLeftC
     dRawForgetL = vecMul dLdForgetL (sigmoidDeriv ncForgetLG)
 
+    -- 右遗忘门梯度
     dLdForgetR = vecMul dLdnewC ncRightC
     dRawForgetR = vecMul dLdForgetR (sigmoidDeriv ncForgetRG)
 
+    -- cell候选梯度
     dLdCellCand = vecMul dLdnewC ncInpGate
     dRawCell = vecMul dLdCellCand (tanhDeriv ncCellCand)
 
-    -- 输入emb反向
-    dEmb = matVecMul (matTrans lstmInpW) dRawInp
+    -- 修复：dEmbLSTM先定义再使用，补全两个遗忘门对embOut的梯度
+    dEmbLSTM = matVecMul (matTrans lstmInpW) dRawInp
          `vecAdd` matVecMul (matTrans lstmOutW) dRawOut
          `vecAdd` matVecMul (matTrans lstmCellW) dRawCell
+         `vecAdd` matVecMul (matTrans lstmForgetLW) dRawForgetL
+         `vecAdd` matVecMul (matTrans lstmForgetRW) dRawForgetR
 
-    -- 左右子树dh dc
+    dProjFeat = matVecMul (matTrans embWeight) dEmbLSTM
+
+    -- 左右子树隐层与细胞状态梯度
     dLdhL = matVecMul (matTrans lstmForgetLW) dRawForgetL
     dLdcL = vecMul dLdnewC ncForgetLG
     dLdhR = matVecMul (matTrans lstmForgetRW) dRawForgetR
     dLdcR = vecMul dLdnewC ncForgetRG
 
-    -- 参数梯度
-    gradEmbW = matOuter dEmb ncFeat
-    gradEmbB = dEmb
+    -- 投影层梯度计算 + 原始输入特征梯度dL/d_ncFeat
+    hidDim = V.length ncEmbOut
+    projDim = V.length dProjFeat
+    leafRawDim = V.length leafProjW
+    nonLeafRawDim = V.length nonLeafProjW
+    zeroG = zeroGrad leafRawDim nonLeafRawDim projDim hidDim
+
+    (projGrad, dRawFeat)
+      | ncIsLeaf =
+          let gW = matOuter dProjFeat ncFeat
+              gB = dProjFeat
+              dX = matVecMul (matTrans leafProjW) dProjFeat
+              pg = zeroG { leafProjW = gW, leafProjB = gB }
+          in (pg, dX)
+      | otherwise =
+          let gW = matOuter dProjFeat ncFeat
+              gB = dProjFeat
+              dX = matVecMul (matTrans nonLeafProjW) dProjFeat
+              pg = zeroG { nonLeafProjW = gW, nonLeafProjB = gB }
+          in (pg, dX)
+
+    -- LSTM内部权重梯度
+    gradEmbW = matOuter dEmbLSTM ncProjFeat
+    gradEmbB = dEmbLSTM
 
     gradIW = matOuter dRawInp ncEmbOut
     gradIB = dRawInp
@@ -442,35 +656,37 @@ backwardNode NetParam{..} NodeCache{..} dLdh dLdc =
     gradCW = matOuter dRawCell ncEmbOut
     gradCB = dRawCell
 
-    grad = NetParam
+    lstmGrad = zeroG
       { embWeight = gradEmbW, embBias = gradEmbB
       , lstmInpW = gradIW, lstmForgetLW = gradFWL, lstmForgetRW = gradFWR
       , lstmOutW = gradOW, lstmCellW = gradCW
       , lstmInpB = gradIB, lstmForgetLB = gradFBL, lstmForgetRB = gradFBR
       , lstmOutB = gradOB, lstmCellB = gradCB
-      , clsWeight = V.replicate 3 (V.replicate (V.length ncEmbOut) 0.0)
-      , clsBias = V.replicate 3 0.0
       }
-  in (grad, dLdhL, dLdcL, dLdhR, dLdcR)
 
--- 递归整树反向传播
+    fullGrad = projGrad `gradAdd` lstmGrad
+
+  in (fullGrad, dLdhL, dLdcL, dLdhR, dLdcR, dRawFeat)
+
+-- 整树递归反向传播
 backwardTree :: NetParam -> SyntaxTree NodeCache -> Vector Double -> Vector Double -> NetGrad
-backwardTree _ EmptySTree _ _ = zeroGrad 0 0
-backwardTree param (STreeNode cache leftTree rightTree) dLdh dLdc =
+backwardTree _ EmptySTree _ _ = zeroGrad 0 0 0 0
+backwardTree param (STreeNode cache leftTree rightTree _) dLdh dLdc =
   let
-    (nodeGrad, dLdhL, dLdcL, dLdhR, dLdcR) = backwardNode param cache dLdh dLdc
+    (nodeGrad, dLdhL, dLdcL, dLdhR, dLdcR, _) = backwardNode param cache dLdh dLdc
     gradLeft = backwardTree param leftTree dLdhL dLdcL
     gradRight = backwardTree param rightTree dLdhR dLdcR
     totalGrad = nodeGrad `gradAdd` gradLeft `gradAdd` gradRight
   in totalGrad
 
--- ===================== 单样本前向+损失+完整梯度 =====================
+-- ===================== 单样本前向+损失+梯度 =====================
 sampleForwardLossGrad :: NetParam -> TrainSample -> (Double, NetGrad)
 sampleForwardLossGrad param ((ltree, rtree), action) =
   let
-    -- 两棵树前向带缓存
-    lFwd@TreeFwdResult{tfRootState = LSTMState hl _} = treeForwardCached param ltree
-    rFwd@TreeFwdResult{tfRootState = LSTMState hr _} = treeForwardCached param rtree
+    lFwd = treeForwardCached param ltree
+    rFwd = treeForwardCached param rtree
+    LSTMState hl _ = tfRootState lFwd
+    LSTMState hr _ = tfRootState rFwd
     concatH = V.concat [hl, hr]
     NetParam{..} = param
     logits = vecAdd (matVecMul clsWeight concatH) clsBias
@@ -478,18 +694,15 @@ sampleForwardLossGrad param ((ltree, rtree), action) =
     label = actionToOneHot action
     loss = crossEntropy pred label
 
-    -- 输出层梯度 dL/dlogit
     dLogit = vecSub pred label
-    -- 分类参数梯度
     gradClsW = matOuter dLogit concatH
     gradClsB = dLogit
-    -- 分割梯度给左右树隐状态
+
     hidDim = V.length hl
     dConcatH = matVecMul (matTrans clsWeight) dLogit
     dHl = V.take hidDim dConcatH
     dHr = V.drop hidDim dConcatH
 
-    -- 两棵树递归BP
     gradL = backwardTree param (tfCacheTree lFwd) dHl (V.replicate hidDim 0.0)
     gradR = backwardTree param (tfCacheTree rFwd) dHr (V.replicate hidDim 0.0)
     totalGrad0 = gradL `gradAdd` gradR
@@ -499,38 +712,48 @@ sampleForwardLossGrad param ((ltree, rtree), action) =
       }
   in (loss, totalGrad)
 
--- SGD单步训练
+-- 单样本SGD更新
 trainStep :: NetParam -> TrainSample -> Double -> (Double, NetParam)
 trainStep param sample lr =
   let (loss, grad) = sampleForwardLossGrad param sample
       newParam = updateParam lr grad param
   in (loss, newParam)
 
--- 简易批量梯度累加（梯度求和后更新）
+-- 批量梯度下降（修复zeroGrad硬编码0）
 batchTrainStep :: NetParam -> [TrainSample] -> Double -> (Double, NetParam)
 batchTrainStep param samples lr =
   let
+    leafD = V.length $ leafProjW param
+    nonLeafD = V.length $ nonLeafProjW param
+    projD = netProjDim param
+    hidD = netHidDim param
+    initG = zeroGrad leafD nonLeafD projD hidD
+
     pairs = map (sampleForwardLossGrad param) samples
     losses = map fst pairs
     grads = map snd pairs
-    avgLoss = sum losses / fromIntegral (length samples)
-    fullGrad = foldl gradAdd (zeroGrad 0 0) grads
-    scaleGrad = matScale (1.0 / fromIntegral (length samples)) fullGrad
-    newParam = updateParam lr scaleGrad param
+
+    totalLoss = sum losses
+    batchSize = fromIntegral (length samples)
+    avgLoss = totalLoss / batchSize
+
+    sumGrad = foldl gradAdd initG grads
+    avgGrad = gradScale (1.0 / batchSize) sumGrad
+    newParam = updateParam lr avgGrad param
   in (avgLoss, newParam)
 
 -- ===================== 树构造辅助函数 =====================
 mkLeaf :: [Double] -> [Double] -> RawSyntaxTree
 mkLeaf wordEmb catEmb =
-  let feat = V.fromList (wordEmb ++ catEmb)
-  in STreeNode feat EmptySTree EmptySTree
+  let feat = listToVec (wordEmb ++ catEmb)
+  in STreeNode feat EmptySTree EmptySTree True
 
 mkNonLeaf :: [Double] -> [Double] -> [Double] -> RawSyntaxTree -> RawSyntaxTree -> RawSyntaxTree
 mkNonLeaf cat tag phra l r =
-  let feat = V.fromList (cat ++ tag ++ phra)
-  in STreeNode feat l r
+  let feat = listToVec (cat ++ tag ++ phra)
+  in STreeNode feat l r False
 
--- ===================== 训练循环与测试入口 =====================
+-- ===================== 尾递归训练循环（防止栈溢出） =====================
 trainLoop :: NetParam -> [TrainSample] -> Double -> Int -> IO NetParam
 trainLoop param _ _ 0 = return param
 trainLoop param samples lr epoch = do
@@ -538,22 +761,84 @@ trainLoop param samples lr epoch = do
   if epoch `mod` 50 == 0
     then putStrLn $ "Epoch剩余:" ++ show epoch ++ " | AvgLoss:" ++ show avgLoss
     else return ()
-  trainLoop newParam samples lr (epoch-1)
+  trainLoop newParam samples lr (epoch - 1)
 
+{- ========= 转换 BiTree PhraSyn0 到 SyntaxTree NodeFeat =========
+ - data BiTree a = Empty | Node a (BiTree a) (BiTree a) deriving (Eq)
+ - data SyntaxTree a = EmptySTree | STreeNode { nodeData :: a, stLeft :: SyntaxTree a, stRight :: SyntaxTree a, stIsLeaf :: Bool } deriving (Show, Eq)
+ -}
+biTreePhraSyn02SyntaxTreeNodeFeat :: BiTree PhraSyn0
+                                     -> Map Category (Vector Double)
+                                     -> Map Tag (Vector Double)
+                                     -> Map PhraStru (Vector Double)
+                                     -> SyntaxTree NodeFeat
+biTreePhraSyn02SyntaxTreeNodeFeat Empty _ _ _ = EmptySTree
+biTreePhraSyn02SyntaxTreeNodeFeat (Node phraSyn0 lt rt) cateVecMap tagVecMap struVecMap =
+    let
+        cvLen = 8
+        cateVec = fromMaybe (V.replicate cvLen 0.0) $ Map.lookup (fst3 phraSyn0) cateVecMap
+        tvLen = 16
+        tagVec = fromMaybe (V.replicate tvLen 0.0) $ Map.lookup (snd3 phraSyn0) tagVecMap
+        struLen = 16
+        struVec = fromMaybe (V.replicate struLen 0.0) $ Map.lookup (thd3 phraSyn0) struVecMap
+    in STreeNode { nodeData = cateVec V.++ tagVec V.++ struVec
+                 , stLeft = biTreePhraSyn02SyntaxTreeNodeFeat lt cateVecMap tagVecMap struVecMap
+                 , stRight = biTreePhraSyn02SyntaxTreeNodeFeat rt cateVecMap tagVecMap struVecMap
+                 , stIsLeaf = isLeafNode lt && isLeafNode rt
+                 }
+
+-- ==================== 建立样本集 ====================
+buildSampleSet :: IO () -- [SampleRecord]
+buildSampleSet = do
+  confInfo <- readFile "Configuration"
+  let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+  putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
+  conn <- getConn
+  let sqlstat = DS.fromString $ "select id, leftOverTree, rightOverTree, clauTagPrior from " ++ syntax_ambig_resol_model
+  stmt <- prepareStmt conn sqlstat
+  (defs, is) <- queryStmt conn stmt []
+  int32UTextTextTextList <- readStreamByInt32UTextTextText [] is        -- [(Int, String, String, String)]
+  let idLTreeRTreePriorList = map (\x -> ( fst4 x
+                                         , stringToBiTree getPhraSyn0FromStr (snd4 x)
+                                         , stringToBiTree getPhraSyn0FromStr (thd4 x)
+                                         , (fromMaybe Noth . priorWithHighestFreq . stringToCTPList) (fth4 x)
+                                         )
+                                  ) int32UTextTextTextList
+  putStrLn $ "Sample number = " ++ show (length idLTreeRTreePriorList) ++ ", the first is: " ++ show (idLTreeRTreePriorList!!0)
+{-
+  let ovTree2ResolList = map (\x -> ((snd4 x, thd4 x), fth4 x)) idLTreeRTreePriorList      -- [((BiTree PhraSyn0, BiTree PhraSyn0), Prior)]
+      cateVecMap = cate2Vec                         -- Map Category (Vector Double)
+      tagVecMap = tag2Vec                           -- Map Tag (Vector Double)
+      struVecMap = stru2Vec                         -- Map PhraStru (Vector Double)
+
+      sampleSet ==  map (\x -> let
+                                 lt = biTreePhraSyn02SyntaxTreeNodeFeat cateVecMap tagVecMap struVecMap ((fst . fst) x)
+                                 rt = biTreePhraSyn02SyntaxTreeNodeFeat cateVecMap tagVecMap struVecMap ((fst . snd) x)
+                               in ((lt, rt), snd x)
+                        ) ovTree2ResolList
+  return sampleSet
+ -}
+-- ===================== 测试入口 =====================
 testPipeline :: IO ()
 testPipeline = do
-  putStrLn "==== Binary Tree-LSTM 句法合并分类模型 (完整BP + JSON加载) ===="
-  let featDim = 4
-      hidDim  = 10
-      lr      = 0.008
-      epochs  = 800
+  putStrLn "==== Binary Tree-LSTM 句法合并分类模型【修复完整版】 ===="
+  let
+    dim_word    = 2
+    dim_cat     = 2
+    dim_tag     = 2
+    dim_phrase  = 2
 
-  initP <- initNetParam featDim hidDim
+    leafRawDim    = dim_word + dim_cat
+    nonLeafRawDim = dim_cat + dim_tag + dim_phrase
+    projDim       = 4
+    hidDim        = 10
 
-  -- 两种加载方式任选
-  -- 1. 从JSON文件加载样本
-  -- samples <- loadSamplesJSON "train_samples.json"
-  -- 2. 使用内置测试样本
+    lr      = 0.008
+    epochs  = 800
+
+  initP <- initNetParam leafRawDim nonLeafRawDim projDim hidDim
+
+  -- 构造测试样本
   let
     leafA = mkLeaf [0.1,0.3] [0.5,0.2]
     leafB = mkLeaf [0.4,0.2] [0.1,0.7]
@@ -565,7 +850,7 @@ testPipeline = do
   putStrLn $ "样本数量：" ++ show (length samples)
   trainedP <- trainLoop initP samples lr epochs
 
-  -- 预测
+  -- 推理预测
   let ((testL,testR), trueAct) = head samples
       lFwd = treeForwardCached trainedP testL
       rFwd = treeForwardCached trainedP testR

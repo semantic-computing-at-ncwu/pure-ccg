@@ -50,6 +50,7 @@ module Database (
   readStreamByInt32Text,           -- [(Int, String)] -> S.InputStream [MySQLValue] -> IO [(Int, String)]
   readStreamByInt32UText,          -- [(Int, String)] -> S.InputStream [MySQLValue] -> IO [(Int, String)]
   readStreamByInt32TextText,       -- [(Int, String, String)] -> S.InputStream [MySQLValue] -> IO [(Int, String, String)]
+  readStreamByInt32UTextTextText,          -- [(Int, String, String, String)] -> S.InputStream [MySQLValue] -> IO [(Int, String, String, String)]
   readStreamByTextText,            -- [(String, String)] -> S.InputStream [MySQLValue] -> IO [(String, String)]
   readStreamByTextTextTextText,    -- [(String, String, String, String)] -> S.InputStream [MySQLValue] -> IO [(String, String, String, String)]
   readStreamByInt32UTextText,      -- [(Int, (String, String))] -> S.InputStream [MySQLValue] -> IO [(Int, (String, String))]
@@ -59,11 +60,13 @@ module Database (
   readStreamByTextTextDouble,      -- [String] -> S.InputStream [MySQLValue] -> IO [String]
   getConn,                     -- IO MySQLConn
   getConnByUserWqj,            -- IO MySQLConn
-  recogOk                      -- IO ()
+  recogOk,                     -- IO ()
+  wordEmbedFile2MySQL,         -- IO ()
   ) where
 
 import           Control.Monad
-import           System.IO
+import           System.IO (getLine, openFile, hClose, hIsEOF, Handle, IOMode(..))
+import qualified System.IO as SIO
 import qualified System.IO.Streams as S
 import qualified Data.String as DS
 import           Database.MySQL.Base
@@ -72,11 +75,17 @@ import           Data.List.Utils
 import           Data.List as DL
 import           Data.Tuple.Utils
 import           Data.Int
-import           Data.Text as DT hiding (length, map, head, last, foldl)
+import           Data.Text as DT hiding (length, map, head, tail, last, foldl)
 import           Data.Word
-import           Data.ByteString.Char8 as BC hiding (putStrLn, readFile, map, head, last)
+import           Data.ByteString.Char8 as BC hiding (putStr, putStrLn, readFile, map, head, tail, last, length)
 import           Utils
 import           Phrase(getPhraCateFromString, getPhraCateListFromString)
+
+import qualified Data.Text.IO as TIO
+import           Data.Aeson (encode)
+import qualified Data.ByteString.Lazy as BL
+import           Data.ByteString (toStrict)
+import           Data.Text.Encoding (decodeUtf8)
 
 fromMySQLInt8 :: MySQLValue -> Int
 fromMySQLInt8 (MySQLInt8 a) = read (show a) :: Int
@@ -281,6 +290,16 @@ readStreamByInt32TextText es is = do
         Just x -> readStreamByInt32TextText (es ++ [(fromMySQLInt32 (x!!0), fromMySQLText (x!!1), fromMySQLText (x!!2))]) is
         Nothing -> return es
 
+{- Read a value from input stream [MySQLValue], append it to existed list [(Int, String, String, String)], then read the next,
+ - until read Nothing.
+ - Here [MySQLValue] is [MySQLInt32U, MySQLText, MySQLText, MySqlText].
+ -}
+readStreamByInt32UTextTextText :: [(Int, String, String, String)] -> S.InputStream [MySQLValue] -> IO [(Int, String, String, String)]
+readStreamByInt32UTextTextText es is = do
+    S.read is >>= \x -> case x of                                        -- Dumb element 'case' is an array with type [MySQLValue]
+        Just x -> readStreamByInt32UTextTextText (es ++ [(fromMySQLInt32U (x!!0), fromMySQLText (x!!1), fromMySQLText (x!!2), fromMySQLText (x!!3))]) is
+        Nothing -> return es
+
 {- Read a value from input stream [MySQLValue], append it to existed list [(String, String)], then read the next,
  - until read Nothing.
  - Here [MySQLValue] is [MySQLText, MySQLText].
@@ -425,3 +444,66 @@ recogOk = do
     putStrLn $ "recogOk: okLastInsertID = " ++ show (getOkLastInsertID ok)
     putStrLn $ "recogOk: okStatus = " ++ show (getOkStatus ok)
     putStrLn $ "recogOk: okWarningCnt = " ++ show (getOkWarningCnt ok)
+
+-- ================= Read word embedding file into MySQL table ===================
+
+-- 解析一行：word f1 f2 ... f300
+-- 返回 (word文本, 向量数组JSON文本)
+parseLine :: Text -> Maybe (Text, Text)
+parseLine line =
+  let parts = DT.words line
+  in if length parts == 301
+     then
+       let w = head parts
+           rawFs = tail parts
+           mFs = traverse readDouble rawFs
+       in case mFs of
+            Just fs ->
+              let jsonBS = encode fs   -- 直接生成 [f1, f2, ...] JSON数组
+                  jsonTxt = decodeUtf8 (toStrict jsonBS)  -- ✅ LazyBS → StrictBS → Text
+              in Just (w, jsonTxt)
+            Nothing -> Nothing
+     else Nothing
+  where
+    readDouble :: Text -> Maybe Double
+    readDouble t = case reads (DT.unpack t) of
+      [(n,"")] -> Just n
+      _ -> Nothing
+
+-- ======== 把词嵌入文件导入数据库 =======
+wordEmbedFile2MySQL :: IO ()
+wordEmbedFile2MySQL = do
+  putStr "向量文本文件路径："    -- D:\GitHub\wordEmb\sgns_renmin_word
+  fp <- SIO.getLine
+  putStr "数据库表："           -- sgns_renmin_word
+  tblName <- SIO.getLine
+  putStr "word字段名："         -- "word"
+  colWord <- SIO.getLine
+  putStr "emb字段名："          -- "emb"
+  colEmb <- SIO.getLine
+  conn <- getConn
+  let sqlstat = DS.fromString $ "INSERT IGNORE INTO " ++ tblName ++ "(" ++ colWord ++ "," ++ colEmb ++ ") VALUES (?,?)"
+  stmt <- prepareStmt conn sqlstat
+
+  h <- SIO.openFile fp ReadMode
+  loop conn stmt h 0
+  SIO.hClose h
+  closeStmt conn stmt
+  close conn
+  putStrLn "✅ 导入完成"
+  where
+    loop :: MySQLConn -> StmtID -> Handle -> Int -> IO ()
+    loop c s h cnt = do
+      e <- hIsEOF h
+      if e
+        then putStrLn $ "成功导入总行数：" ++ show cnt
+        else do
+          lineStr <- SIO.hGetLine h
+          let l = DT.pack lineStr                            -- String → Text
+          case parseLine l of
+            Just (w, embTxt) -> do
+              executeStmt c s [ MySQLText w, MySQLText embTxt ]
+              loop c s h (cnt + 1)
+            Nothing -> do
+              putStrLn $ "⚠️ 跳过坏行：" ++ DT.unpack (DT.take 100 l)
+              loop c s h cnt

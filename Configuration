@@ -17,8 +17,9 @@ script_source:corpus_pccg_manual
 # tree_source:treebank_by_identity_ph_euc_ot_euc_sg_euc_Sn001_200
 # tree_source:treebank_by_SLR_identity_ph_euc_ot_euc_sg_euc_Sn001_200
 # tree_source:treebank_including_SLR_CL_seman
-tree_source:corpus_pccg_manual
-#tree_source:treebank_by_script_with_semantics_not_reductive_20260129
+# tree_source:corpus_pccg_manual
+# tree_source:treebank_by_script_with_semantics_not_reductive_20260129
+tree_source:treebank_by_script_with_semantics_not_reductive_20260129
 
 # Field storing parsing tree, default value of which is 'tree'.
 tree_field:tree
@@ -46,7 +47,6 @@ tree_field:tree
 #   - tree_target:treebank_including_SLR_for_creating_stru_gene3a_phrasyn0_202509
 #   - treebank_by_script_20260125
 #   - corpus_pccg_manual
-#tree_target:corpus_pccg_manual
 tree_target:treebank_by_script_with_semantics_not_reductive_20260129
 
 # Model of phrasal Syntax. Now two models are available: phrasyn0 and phrasyn
@@ -67,6 +67,7 @@ phrasyn_model:phrasyn0
 #   - stru_gene3_202508
 #   - stru_gene3a_202508
 #   - stru_gene3a_phrasyn0_202509
+#   - stru_gene3a_phrasyn0_20260129
 syntax_ambig_resol_model:stru_gene3a_phrasyn0_20260129
 
 # Category ambiguity resolution model also is the name of MySQL table storing the samples of that model.
@@ -255,3 +256,6 @@ maxReductStepNum:100
 
 # Whether a CL term should be reduced or not
 reduceOrNot:True
+
+# Word embedding table
+wordEmbTbl:sgns_renmin_word

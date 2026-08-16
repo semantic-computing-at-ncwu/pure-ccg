@@ -99,6 +99,7 @@ module Utils (
     emptyBiTree,   -- BiTree a
     isEmptyBiTree, -- BiTree a -> Bool
     isNodeBiTree,  -- BiTree a -> Bool
+    isLeafNode,    -- BiTree a -> Bool
     getLeftSub,    -- BiTree a -> BiTree a
     getRightSub,   -- BiTree a -> BiTree a
     getRoot,       -- BiTree a -> a
@@ -108,7 +109,7 @@ module Utils (
     preTravOnBiTree,     -- BiTree a -> [a]
     traverseBiTree,      -- (a -> a) -> BiTree a -> BiTree a
     nodePairsBetwTwOBiTree,   -- BiTree a -> BiTree a -> [(a,a)]
---    stringToBiTree,     -- (Read a) => String -> BiTree a
+    stringToBiTree,     -- (String -> a) -> String -> BiTree a
     forest2BiTree,      -- [BiTree a] -> BiTree a
     jaccardSimIndex,    -- Eq a => [a] -> [a] -> Double
     jaccardSimIndex',   -- Eq a => [[a]] -> Double
@@ -824,13 +825,20 @@ data BiTree a = Empty | Node a (BiTree a) (BiTree a) deriving (Eq)
 emptyBiTree :: BiTree a
 emptyBiTree = Empty
 
--- isEmptyBiTree :: BiTree a -> Bool
+-- Is it a empty binary tree?
+isEmptyBiTree :: BiTree a -> Bool
 isEmptyBiTree Empty = True
 isEmptyBiTree _ = False
 
--- isNodeBiTree :: BiTree a -> Bool
+-- Is it a non-empty binary tree?
+isNodeBiTree :: BiTree a -> Bool
 isNodeBiTree Empty = False
 isNodeBiTree _ = True
+
+-- Is it a binary tree only having a root node?
+isLeafNode :: BiTree a -> Bool
+isLeafNode Empty = False
+isLeafNode biTree = isEmptyBiTree (getLeftSub biTree) && isEmptyBiTree (getRightSub biTree)
 
 -- Get left subtree of a binary tree.
 getLeftSub :: BiTree a -> BiTree a
@@ -906,12 +914,12 @@ nodePairsBetwTwOBiTree t1 t2 = go [(t1, t2)]
 
 {- Create a binary tree from a string.
  - Has NOT debugged.
-stringToBiTree :: (Read a) => String -> BiTree a
-stringToBiTree "()" = Empty
-stringToBiTree str = Node (read rStr :: a) (stringToBiTree lstStr) (stringToBiTree rstStr)
+ -}
+stringToBiTree :: (String -> a) -> String -> BiTree a
+stringToBiTree _ "()" = Empty
+stringToBiTree s2a str = Node (s2a rStr) (stringToBiTree s2a lstStr) (stringToBiTree s2a rstStr)
     where
     (rStr, lstStr, rstStr) = stringToTriple str
- -}
 
 {- Create a binary tree from a forest of binary trees.
  - Binary trees for Categorial Grammar are those not including 1-degree nodes, so left-child right-sibling algorithm is used.

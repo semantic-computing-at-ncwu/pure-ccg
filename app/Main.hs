@@ -30,6 +30,7 @@ import AmbiResol
 import Clustering
 import KMedoids
 import Maintain
+import BiTreeLSTM (testPipeline)
 import Output (showSnScript2List)
 import Text.Printf
 import qualified Numeric.LinearAlgebra as LA
@@ -874,9 +875,10 @@ doExperiments username = do
     putStrLn " C -> Test cate2Vec in Module Statistics"
     putStrLn " D -> Test tag2Vec in Module Statistics"
     putStrLn " E -> Test stru2Vec in Module Statistics"
+    putStrLn " F -> Test Binary Tree LSTM for syntactic disambiguity in Module BiTreeLSTM"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -896,6 +898,7 @@ doExperiments username = do
                "C" -> doTestCate2Vec username
                "D" -> doTestTag2Vec username
                "E" -> doTestStru2Vec username
+               "F" -> doTestBiTreeLSTM username
              doExperiments username                            -- Rear recursion
 
 {- B.1 Parse the sentence indicated by serial_num, here 'username' has not been used.
@@ -1276,6 +1279,19 @@ doTestStru2Vec username = do
         putStrLn $ "Embedding vector of phrasal structure 'AHn': " ++ listToString (map (printf "%.4f" :: Double -> String) aHnVec)
       else putStr ""
 
+{- B.F Test the binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM.
+ -}
+doTestBiTreeLSTM :: String -> IO ()
+doTestBiTreeLSTM username = do
+    confInfo <- readFile "Configuration"
+    let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+    putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
+    let prompt = " Test the binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM, are you sure? [y/n] (RETURN for 'y'): "
+    answer <- getLineUntil prompt ["y","n"] True
+    if answer == "y"
+      then testPipeline
+      else putStr ""
+
 -- C. Various maintenance tools.
 doMaintenance :: String -> IO ()
 doMaintenance username = do
@@ -1367,7 +1383,7 @@ doRearrangeIdinCertainTable username =
             putStrLn $ "Table " ++ tblName ++ "_bak was dropped."
             close conn
 
-          x | elem x ["stru_gene3a_202508", "stru_gene3a_phrasyn0_202509"] -> do
+          x | isPrefixOf "stru_gene3a_" x -> do
             let sqlstat = DS.fromString $ "insert into " ++ tblName ++ "_bak (leftOverTree, rightOverTree, clauTagPrior, lpHitCount, rpHitCount, nothHitCount) select leftOverTree, rightOverTree, clauTagPrior, lpHitCount, rpHitCount, nothHitCount from " ++ tblName     -- Copy table data to new table.
             stmt' <- prepareStmt conn sqlstat
             ok <- executeStmt conn stmt' []

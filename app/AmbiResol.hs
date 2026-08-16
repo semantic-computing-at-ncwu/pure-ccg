@@ -4,7 +4,8 @@
 module AmbiResol (
     PhraSyn0,            -- (Category, Tag, PhraStru)
     PhraSyn,             -- (Category, Tag, PhraStru, Span)
-    nullPhraSyn0,         -- (Nil, "", "")
+    getPhraSyn0FromStr,  -- String -> PhraSyn0
+    nullPhraSyn0,        -- (Nil, "", "")
     nullPhraSyn,         -- (Nil, "", "", -1)
     SIdx,                -- Int
     LeftExtend,          -- [(Category, Tag, PhraStru, Span)]
@@ -168,6 +169,12 @@ import qualified Data.Map.Strict as M
  -}
 type PhraSyn0 = (Category, Tag, PhraStru)
 type PhraSyn = (Category, Tag, PhraStru, Span)
+
+-- Get PhraSyn0 from its string.
+getPhraSyn0FromStr :: String -> PhraSyn0
+getPhraSyn0FromStr str = (getCateFromString cate, tag, phrastru)
+    where
+        (cate, tag, phrastru) = stringToTriple str
 
 -- Null phrasal syntax, in which grammar tag, phrasal structure and phrasal span use their not existing values.
 nullPhraSyn :: PhraSyn
@@ -627,7 +634,6 @@ phraSynToString phs = "(" ++ ca ++ "," ++ ta ++ "," ++ ps ++ "," ++ sp ++ ")"
 -- Get the string of [PhraSyn]
 nPhraSynToString :: [PhraSyn] -> String
 nPhraSynToString nps = listToString (map phraSynToString nps)
-
 
 -- Get the string of [PhraSyn0]
 nPhraSyn0ToString :: [PhraSyn0] -> String

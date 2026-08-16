@@ -18,7 +18,7 @@ module Category (
     isPrimitive,   -- Category -> Bool
     isDerivative,  -- Category -> Bool
     veriStrForCate,      -- String -> Bool
-    getCateFromString,   --String -> Category
+    getCateFromString,   -- String -> Category
     indexOfSlash,        -- Int -> Int -> String -> Int
     leftStr,       -- String -> String
     rightStr,      -- String -> String
@@ -234,7 +234,7 @@ leftStr str
         index = indexOfSlash 0 0 str
         lStr = take index str
 
--- Suppose slashes have no any type, and are just '/'.
+-- For pure Combinatory Categorial Grammar, slashes have no any type, and are just '/'.
 rightStr :: String -> String
 rightStr str
     | index == -1 = error "rightStr"
