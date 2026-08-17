@@ -19,7 +19,7 @@ script_source:corpus_pccg_manual
 # tree_source:treebank_including_SLR_CL_seman
 # tree_source:corpus_pccg_manual
 # tree_source:treebank_by_script_with_semantics_not_reductive_20260129
-tree_source:treebank_by_script_with_semantics_not_reductive_20260129
+tree_source:corpus_pccg_manual
 
 # Field storing parsing tree, default value of which is 'tree'.
 tree_field:tree
@@ -47,11 +47,13 @@ tree_field:tree
 #   - tree_target:treebank_including_SLR_for_creating_stru_gene3a_phrasyn0_202509
 #   - treebank_by_script_20260125
 #   - corpus_pccg_manual
-tree_target:treebank_by_script_with_semantics_not_reductive_20260129
+#   - tree_target:treebank_by_script_with_semantics_not_reductive_20260129
+tree_target:treebank_by_script_with_semantics_not_reductive_20260817
 
 # Model of phrasal Syntax. Now two models are available: phrasyn0 and phrasyn
 # phrasyn0: (Category, Tag, PhraStru)
 # phrasyn: (Category, Tag, PhraStru, Span)
+# phrasyn1: (Category, Tag, PhraStru, Seman, Span)
 phrasyn_model:phrasyn0
 
 # Syntax ambiguity resolution model also is the name of MySQL table storing the samples of that model.
@@ -68,12 +70,14 @@ phrasyn_model:phrasyn0
 #   - stru_gene3a_202508
 #   - stru_gene3a_phrasyn0_202509
 #   - stru_gene3a_phrasyn0_20260129
-syntax_ambig_resol_model:stru_gene3a_phrasyn0_20260129
+#   - stru_gene3a0s_20260817
+syntax_ambig_resol_model:stru_gene3a0s_20260817
 
 # Category ambiguity resolution model also is the name of MySQL table storing the samples of that model.
 # Possible values of this property:
 #   - slr_corpus_202509
-cate_ambig_resol_model:slr_corpus_20260129
+#   - slr_corpus_20260129
+cate_ambig_resol_model:slr_corpus_20260817
 
 # Switch of updating syntax or category ambiguity resolution samples in database.
 # For grammar inconsistancy, parsing by scripts sometimes includes manually ambiguity resolution, using new category conversion rules or syntax rules.
@@ -82,7 +86,7 @@ cate_ambig_resol_model:slr_corpus_20260129
 # When NOT hope to update syntax or category ambiguity resolution samples in database, set this switch as Off.
 # Now, category ambiguity resolution model SLR samples are stored with treebank created by parsing with scripts.
 # Switch category_ambig_resol_sample_update_switch is NOT used at present.
-syntax_ambig_resol_sample_update_switch:Off
+syntax_ambig_resol_sample_update_switch:On
 category_ambig_resol_sample_update_switch:Off
 
 # Distance Algo. for phrasal grammar aspects, overlapping types, and StruGene contexts.

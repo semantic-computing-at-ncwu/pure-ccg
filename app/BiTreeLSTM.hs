@@ -823,15 +823,15 @@ testPipeline :: IO ()
 testPipeline = do
   putStrLn "==== Binary Tree-LSTM 句法合并分类模型【修复完整版】 ===="
   let
-    dim_word    = 2
-    dim_cat     = 2
-    dim_tag     = 2
-    dim_phrase  = 2
+    dim_word    = 300
+    dim_cat     = 8
+    dim_tag     = 16
+    dim_phrase  = 16
 
     leafRawDim    = dim_word + dim_cat
     nonLeafRawDim = dim_cat + dim_tag + dim_phrase
-    projDim       = 4
-    hidDim        = 10
+    projDim       = 64
+    hidDim        = 128
 
     lr      = 0.008
     epochs  = 800

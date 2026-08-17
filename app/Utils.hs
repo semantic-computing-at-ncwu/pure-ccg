@@ -47,6 +47,7 @@ module Utils (
     splitTagAsConvOrCal,         -- String -> [String]
     maxStrLen,     -- [String] -> Int
     doubleBackSlash,   -- String -> String
+    doubleApostrophe,  -- String -> String
     putNStr,       -- [String] -> IO ()
     throwHTSpace,  -- String -> String
 --    lstrip,        -- String -> String
@@ -349,6 +350,13 @@ doubleBackSlash "" = ""
 doubleBackSlash (c:cs)
     | c == '\\' = "\\\\" ++ doubleBackSlash cs
     | otherwise = c : doubleBackSlash cs
+
+-- Double every single apostrophe in a string to adapt inserting it as value into MySQL table.
+doubleApostrophe :: String -> String
+doubleApostrophe "" = ""
+doubleApostrophe (c:cs)
+    | c == '\'' = "''" ++ doubleApostrophe cs
+    | otherwise = c : doubleApostrophe cs
 
 putNStr :: [String] -> IO ()
 putNStr [] = putStrLn ""
