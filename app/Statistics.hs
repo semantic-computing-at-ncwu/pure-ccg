@@ -2147,6 +2147,12 @@ cate2Vec = do
     stmt <- prepareStmt conn sqlstat
     (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx, toMySQLInt32 endIdx]
 
+    putStrLn $ "Build Map from category to vector ..."
+    putStrLn $ "  phrasyn_model: " ++ phrasyn_model
+    putStrLn $ "  tree_source: " ++ tree_source
+    putStrLn $ "  startIdx: " ++ startIdxStr
+    putStrLn $ "  endIdx: " ++ endIdxStr
+
     sentStrList <- readStreamByText [] is                     -- [String], here a string is the parsing result of a sentence.
     let sentClauStrList = map stringToList sentStrList        -- [[String]], here a string is the parsing result of a clause.
         sentClauTreeList = map (map readTree) sentClauStrList     -- [[Tree]], here Tree ::= (ClauIdx, [PhraCate])
@@ -2179,6 +2185,12 @@ tag2Vec = do
     stmt <- prepareStmt conn sqlstat
     (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx, toMySQLInt32 endIdx]
 
+    putStrLn $ "Build Map from grammatic tag to vector ..."
+    putStrLn $ "  phrasyn_model: " ++ phrasyn_model
+    putStrLn $ "  tree_source: " ++ tree_source
+    putStrLn $ "  startIdx: " ++ startIdxStr
+    putStrLn $ "  endIdx: " ++ endIdxStr
+
     sentStrList <- readStreamByText [] is                     -- [String], here a string is the parsing result of a sentence.
     let sentClauStrList = map stringToList sentStrList        -- [[String]], here a string is the parsing result of a clause.
         sentClauTreeList = map (map readTree) sentClauStrList     -- [[Tree]], here Tree ::= (ClauIdx, [PhraCate])
@@ -2210,6 +2222,12 @@ stru2Vec = do
         sqlstat = DS.fromString $ "select tree from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
     stmt <- prepareStmt conn sqlstat
     (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx, toMySQLInt32 endIdx]
+
+    putStrLn $ "Build Map from phrasal structure to vector ..."
+    putStrLn $ "  phrasyn_model: " ++ phrasyn_model
+    putStrLn $ "  tree_source: " ++ tree_source
+    putStrLn $ "  startIdx: " ++ startIdxStr
+    putStrLn $ "  endIdx: " ++ endIdxStr
 
     sentStrList <- readStreamByText [] is                     -- [String], here a string is the parsing result of a sentence.
     let sentClauStrList = map stringToList sentStrList        -- [[String]], here a string is the parsing result of a clause.

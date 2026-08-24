@@ -105,6 +105,10 @@ decay_subtree_kernel:0.8
 syntax_resol_sample_startsn:1
 syntax_resol_sample_endsn:350
 
+# Index number range of the used syntax ambiguity resolution model samples.
+syntax_resol_sample_startId:28
+syntax_resol_sample_endId:28
+
 # Algo. of pruning in resolving syntactic ambiguity.
 prune_algo:NoDemandPhrase
 # prune_algo:FinalTree
@@ -263,3 +267,22 @@ reduceOrNot:True
 
 # Word embedding table
 wordEmbTbl:sgns_renmin_word
+
+# Dimensions of embedding vectors for word, category, grammar tag, and phrasal structure.
+dim_word:300
+dim_cate:8
+dim_tag:16
+dim_stru:16
+
+# Dimensions of projection layers and hidden layers.
+dim_proj:64
+dim_hidden:64
+
+# Learning rate for Neural Network
+lr:0.008
+
+# Epochs in training Neural Network
+epochs:800
+
+# Early stop patience in training Neural Network
+earlyStopPatience:5

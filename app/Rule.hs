@@ -4,6 +4,7 @@
 module Rule (
     rules,    -- [(Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)]
     ruleTags, -- [Tag], List of CCG rule tags
+    combinators,        -- [String], List of syntactic combinators
     semComb,  -- Seman -> Seman -> Seman
     appF,     -- (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
     appB,     -- (Category,Seman,PhraStru) -> (Category,Seman,PhraStru) -> (Category, Tag, Seman, PhraStru, Act)
@@ -28,7 +29,8 @@ module Rule (
     ruleOn,           -- Rule -> OnOff -> OnOff
     ruleOff,          -- Rule -> OnOff -> OnOff
     updateOnOff,      -- [Rule] -> [String] -> [Rule]
-    showOnOff         -- [Rule] -> IO ()
+    showOnOff,        -- [Rule] -> IO ()
+    seman2SynSeman,   -- Seman -> Seman
     ) where
 
 import Data.List (elemIndex)
@@ -62,6 +64,9 @@ rules = [appF, appB, comF, comB, comF2, comB2, raiF, raiB, raiB2, remF, comFS, c
  -}
 ruleTags :: [Tag]
 ruleTags = [">","<",">B","<B",">B2","<B2","T->B","T-<B","T-<B2",">K",">S","<S",">W","<W"]
+
+combinators :: [String]
+combinators = ["A","T","B","B'","B3","B3'","R","C","U","K","S","S'","W","W'"]
 
 {- Combine two semantic components by given combinator and reduct at most 10 steps.
  - Semantics of word or phrase is considered as CL term. return reducted CL term.
@@ -586,3 +591,10 @@ showOnOff (r:rs) = do
     putStr (show r)
     putStr " "
     showOnOff rs
+
+-- Transform the showing string of a CL term semantics to the showing string of the corresponding CL term of syntactic semantics.
+seman2SynSeman :: Seman -> Seman
+seman2SynSeman seman =  show synTerm
+    where
+    term = getTermFromStr seman                                     -- CL term
+    synTerm = removePreComb term [ConstTerm x | x <- combinators]

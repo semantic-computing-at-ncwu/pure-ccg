@@ -46,6 +46,7 @@ library
     , hmatrix-gsl
     , hspec
     , io-streams
+    , list-shuffle
     , massiv
     , mtl
     , mysql-haskell
@@ -102,6 +103,7 @@ executable pure-ccg-exe
     , hmatrix-gsl
     , hspec
     , io-streams
+    , list-shuffle
     , massiv
     , mtl
     , mysql-haskell
@@ -177,6 +179,7 @@ test-suite pure-ccg-test
     , hmatrix-gsl
     , hspec
     , io-streams
+    , list-shuffle
     , massiv
     , mtl
     , mysql-haskell

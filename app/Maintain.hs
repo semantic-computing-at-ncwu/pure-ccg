@@ -542,7 +542,7 @@ createIntersionJuxtapositionForEveryClau = do
     confInfo <- readFile "Configuration"
     let tree_target = getConfProperty "tree_target" confInfo            -- For an example, treebank_by_script_with_semantics_not_reductive_20260129
     putStrLn $ "tree_target: " ++ tree_target
-    putStrLn $ "This table should have Field 'intersion juxtaposition'. "
+    putStrLn $ "This table should have Field 'intension_juxtaposition'. "
     let reduceOrNotStr = getConfProperty "reduceOrNot" confInfo
     putStrLn $ "reduceOrNot: " ++ reduceOrNotStr
     let reduceOrNot = read reduceOrNotStr :: Bool
@@ -590,7 +590,7 @@ createIntersionJuxtapositionForEveryClau = do
                                                                                 -- [([(ClauIdx, [Term])], SentIdx)]
                 let rows' = map (\row -> [(toMySQLText . show . fst) row, (toMySQLInt32 . snd) row]) rowsData
                                                                                 -- [(MySQLText, MySQLInt32)]
-                let sqlstat1 = DS.fromString $ "update " ++ tree_target ++ " set intersion_juxtaposition = ? where serial_num = ?"
+                let sqlstat1 = DS.fromString $ "update " ++ tree_target ++ " set intension_juxtaposition = ? where serial_num = ?"
                 oks <- executeMany conn sqlstat1 rows'
                 putStrLn $ show (length oks) ++ " rows have been updated."      -- Only rows with their values changed are affected rows.
 

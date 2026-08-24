@@ -108,9 +108,10 @@ module Utils (
     setRightSub,   -- BiTree a -> BiTree a -> BiTree a
     setRoot,       -- a -> BiTree a -> BiTree a
     preTravOnBiTree,     -- BiTree a -> [a]
-    traverseBiTree,      -- (a -> a) -> BiTree a -> BiTree a
+    traverseBiTree,      -- (a -> b) -> BiTree a -> BiTree b
     nodePairsBetwTwOBiTree,   -- BiTree a -> BiTree a -> [(a,a)]
     stringToBiTree,     -- (String -> a) -> String -> BiTree a
+    mergeBiTree,        -- BiTree a -> BiTree b -> BiTree (a,b)
     forest2BiTree,      -- [BiTree a] -> BiTree a
     jaccardSimIndex,    -- Eq a => [a] -> [a] -> Double
     jaccardSimIndex',   -- Eq a => [[a]] -> Double
@@ -497,7 +498,7 @@ listLength str = length (stringToList str)
 -- Get [String] from a String of element list.
 stringToList :: String -> [String]
 stringToList str
-    | head str' /= '[' || last str' /= ']' = error "stringToList: This is not the string of a list."
+    | head str' /= '[' || last str' /= ']' = error $ "stringToList: Not the string of a list: " ++ str
     | str'' == "" = []
     | idx == -1 = [str'']
     | otherwise = throwHTSpace (take idx str'') : (stringToList ("[" ++ drop (idx + 1) str'' ++ "]"))
@@ -906,7 +907,7 @@ preTravOnBiTree Empty = []
 preTravOnBiTree (Node root leftSub rightSub) = root : preTravOnBiTree leftSub ++ preTravOnBiTree rightSub
 
 -- Traverse a Bitree instance.
-traverseBiTree :: (a -> a) -> BiTree a -> BiTree a
+traverseBiTree :: (a -> b) -> BiTree a -> BiTree b
 traverseBiTree _ Empty = Empty
 traverseBiTree f (Node root leftSub rightSub) = Node (f root) (traverseBiTree f leftSub) (traverseBiTree f rightSub)
 
@@ -928,6 +929,13 @@ stringToBiTree _ "()" = Empty
 stringToBiTree s2a str = Node (s2a rStr) (stringToBiTree s2a lstStr) (stringToBiTree s2a rstStr)
     where
     (rStr, lstStr, rstStr) = stringToTriple str
+
+{- Merge two isomorphic BiTree into one with same structure.
+ -}
+mergeBiTree :: (Show a, Show b) => BiTree a -> BiTree b -> BiTree (a,b)
+mergeBiTree Empty Empty = Empty
+mergeBiTree (Node a al ar) (Node b bl br) = Node (a,b) (mergeBiTree al bl) (mergeBiTree ar br)
+mergeBiTree t1 t2 = error $ "mergeBiTree: Not isomorphic: t1 = " ++ show t1 ++ ", t2 = " ++ show t2
 
 {- Create a binary tree from a forest of binary trees.
  - Binary trees for Categorial Grammar are those not including 1-degree nodes, so left-child right-sibling algorithm is used.

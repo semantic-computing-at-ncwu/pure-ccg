@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 -- Copyright (c) 2019-2026 North China University of Water Resources and Electric Power
 -- All rights reserved.
 
@@ -183,6 +185,7 @@ import Utils
 import Data.List (nub, elemIndex)
 import Data.Tuple.Utils
 import Text.Printf
+import GHC.Generics (Generic)
 import Corpus
 import Database
 import Database.MySQL.Base
@@ -233,7 +236,7 @@ type LeftOver = PhraSyn         -- Overlapping left phrase
 type RightOver = PhraSyn        -- Overlapping right phrase
 type RightExtend = [PhraSyn]    -- Right neighbors
 type OverType = Int             -- Overlapping type, [0 .. 5]
-data Prior = Lp | Rp | Noth deriving (Eq, Read)    -- Lp means left prior, Rp means right prior, Noth means nothing or both not.
+data Prior = Lp | Rp | Noth deriving (Eq, Read, Generic)    -- Lp means left prior, Rp means right prior, Noth means nothing or both not.
 
 instance Show Prior where
     show Lp = "Lp"

@@ -28,6 +28,7 @@ module Output (
     showNPhraCateListLn,   -- [[PhraCate]] -> IO ()
     putNPCList,       -- [[PhraCate]] -> IO ()
     showStruFrag,     -- [PhraCate] -> PhraCate -> PhraCate -> [PhraCate] -> OverType -> IO ()
+    showStruGene3a0sSample,      -- BiTree Syntax0 -> BiTree Syntax0 -> IO ()
     showAmbiModel1Frag,    -- PhraCate -> PhraCate -> [PhraCate] -> OverType -> IO ()
     getNPhraCate_String,   -- [PhraCate] -> String
     showNPhraCatePair,     -- [(PhraCate, PhraCate)] -> IO ()
@@ -326,6 +327,17 @@ showStruFrag leftExtend leftOver rightOver rightExtend overType = do
     putStr ", rightExtend = "
     showNPhraCate rightExtend
     putStrLn $ ", overType = " ++ show overType
+
+showStruGene3a0sSample :: BiTree PhraSyn0 -> Seman -> BiTree PhraSyn0 -> Seman -> IO ()
+showStruGene3a0sSample lot los rot ros = do
+    putStr "leftOverTree = "
+    putStr (show lot)
+    putStr ", leftOverSeman = "
+    putStr los
+    putStr ", rightOverTree = "
+    putStr (show rot)
+    putStr ", rightOverSeman = "
+    putStrLn ros
 
 showAmbiModel1Frag :: PhraCate -> PhraCate -> [PhraCate] -> OverType -> IO ()
 showAmbiModel1Frag leftPhrase rightPhrase context overType = do

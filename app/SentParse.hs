@@ -1250,7 +1250,12 @@ parseSentByScript sn cs = do
     let syntax_ambig_resol_sample_update_switch = getConfProperty "syntax_ambig_resol_sample_update_switch" confInfo
 
     conn <- getConn
-    let sqlstat = DS.fromString $ "create table if not exists " ++ tree_target ++ " (serial_num int primary key auto_increment,tree mediumtext, script mediumtext, tree_check tinyint(1), SLR mediumtext, tagClause varchar(50))"
+    let sqlstat = DS.fromString $ "create table if not exists " ++ tree_target
+                               ++ " ( serial_num INT NOT NULL PRIMARY KEY AUTO_INCREMENT"
+                               ++ " , tree MEDIUMTEXT, script MEDIUMTEXT, seman_comb MEDIUMTEXT"
+                               ++ " , word_context MEDIUMTEXT, word_context_reduct MEDIUMTEXT"
+                               ++ " , intension_juxtaposition MEDIUMTEXT, tree_check TINYINT(1) DEFAULT NULL"
+                               ++ " , SLR MEDIUMTEXT, tagClause VARCHAR(50) DEFAULT NULL)"
     stmt <- prepareStmt conn sqlstat
     executeStmt conn stmt []
 
@@ -2983,6 +2988,15 @@ syntaxAmbiResolByManualResol' nPCs (lp, rp) = do
         let reps = getPhraByStart (enOfCate rp + 1) nPCs      -- Get all right-entend phrases
         putStr "Find structural fragment: "
         showStruFrag leps lp rp reps ot
+      x | isPrefixOf "stru_gene3a0s_" x -> do                 -- Multimodel
+        let leftOverTree = findATree lp nPCs                  -- BiTree PhraCate
+            rightOverTree = findATree rp nPCs                 -- BiTree PhraCate
+            lot = phraCateTree2PhraSyn0Tree leftOverTree      -- BiTree PhraSyn0
+            rot = phraCateTree2PhraSyn0Tree rightOverTree     -- BiTree PhraSyn0
+            los = (seOfCate lp)!!0                            -- Seman, having apostrophe, such as "人民'".
+            ros = (seOfCate rp)!!0                            -- Seman, having apostrophe.
+        putStr "Find structural fragment: "
+        showStruGene3a0sSample lot los rot ros
       _ -> error "syntaxAmbiResolByManualResol': syntax_ambig_resol_model is set wrongly."
 
     priorFlag <- getLineUntil "please input new priority [Lp/Rp/Noth]: ('1' or RETURN for 'Lp', '2' for 'Rp', '3' for 'Noth') " ["1", "2", "3"] True
@@ -3025,18 +3039,14 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
             lotv = doubleBackSlash (show lot)                 -- Convert BiTree Syntax0 into String, and double backward slashes.
             rotv = doubleBackSlash (show rot)                 -- Convert BiTree Syntax0 into String, and double backward slashes.
 
-            losv = doubleApostrophe $ (seOfCate leftOver)!!0                    -- Seman
-            rosv = doubleApostrophe $ (seOfCate rightOver)!!0                   -- Seman
+            losv = (seOfCate leftOver)!!0                     -- Seman, having apostrophe, such as "人民'".
+            rosv = (seOfCate rightOver)!!0                    -- Seman, having apostrophe.
 
         conn <- getConn
-        let sqlstat = read (show ("select id, clauTagPrior, lpHitCount, rpHitCount, nothHitCount from "
-                                   ++ syntax_ambig_resol_model
-                                   ++ " where leftOverTree = '" ++ lotv ++ "' && "
-                                   ++ "leftOverSeman = '" ++ losv ++ "' && "
-                                   ++ "rightOverTree = '" ++ rotv ++ "' && "
-                                   ++ "rightOverSeman = '" ++ rosv ++ "'")) :: Query
+        let sqlstat = DS.fromString $ "select id, clauTagPrior, lpHitCount, rpHitCount, nothHitCount from " ++ syntax_ambig_resol_model
+                                   ++ " where leftOverTree = ? && leftOverSeman = ? && rightOverTree = ? && rightOverSeman = ?"
         stmt <- prepareStmt conn sqlstat
-        (defs, is) <- queryStmt conn stmt []
+        (defs, is) <- queryStmt conn stmt [toMySQLText lotv, toMySQLText losv, toMySQLText rotv, toMySQLText rosv]
 
         rows <- S.toList is
         if rows /= []
@@ -3077,13 +3087,14 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
 
           else do
             putStrLn "Inquire failed."
-            let clauTagPrior = (clauTag, prior)
+            putStrLn $ "lotv: " ++ lotv ++ ", losv: " ++ losv ++ ", rotv: " ++ rotv ++ ", rosv: " ++ rosv ++ ", prior: " ++ show prior
+            let clauTagPriorList = [(clauTag, prior)]
             let sqlstat = case prior of
-                            Lp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,leftOverSeman,rightOverTree,rightOverSeman,clauTagPrior,lpHitCount) values ('" ++ lotv ++ "','" ++ losv ++ "','" ++ rotv ++ "','" ++ rosv ++ "','[" ++ show clauTagPrior ++ "]',1)")) :: Query
-                            Rp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,rpHitCount) values ('" ++ lotv ++ "','" ++ losv ++ "','" ++ rotv ++ "','" ++ rosv ++ "','[" ++ show clauTagPrior ++ "]',1)")) :: Query
-                            Noth -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,nothHitCount) values ('" ++ lotv ++ "','" ++ losv ++ "','" ++ rotv ++ "','" ++ rosv ++ "','[" ++ show clauTagPrior ++ "]',1)")) :: Query
+                            Lp -> DS.fromString $ "insert " ++ syntax_ambig_resol_model ++ " set leftOverTree = ?, leftOverSeman = ?, rightOverTree = ?, rightOverSeman = ?, clauTagPrior = ?, lpHitCount = 1"
+                            Rp -> DS.fromString $ "insert " ++ syntax_ambig_resol_model ++ " set leftOverTree = ?, leftOverSeman = ?, rightOverTree = ?, rightOverSeman = ?, clauTagPrior = ?, rpHitCount = 1"
+                            Noth -> DS.fromString $ "insert " ++ syntax_ambig_resol_model ++ " set leftOverTree = ?, leftOverSeman = ?, rightOverTree = ?, rightOverSeman = ?, clauTagPrior = ?, nothHitCount = 1"
             stmt1 <- prepareStmt conn sqlstat
-            oks <- executeStmt conn stmt1 []             -- Insert the described structural gene.
+            oks <- executeStmt conn stmt1 [toMySQLText lotv, toMySQLText losv, toMySQLText rotv, toMySQLText rosv, toMySQLText (show clauTagPriorList)]    -- Insert the described structural gene.
             putStrLn $ "updateSyntaxAmbiResolSample': Last inserted row with ID " ++ show (getOkLastInsertID oks)
             closeStmt conn stmt1
             close conn
@@ -3142,11 +3153,11 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
 
           else do
             putStrLn "Inquire failed."
-            let clauTagPrior = (clauTag, prior)
+            let clauTagPriorList = [(clauTag, prior)]
             let sqlstat = case prior of
-                            Lp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,lpHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPrior ++ "]',1)")) :: Query
-                            Rp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,rpHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPrior ++ "]',1)")) :: Query
-                            Noth -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,nothHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPrior ++ "]',1)")) :: Query
+                            Lp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,lpHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPriorList ++ "]',1)")) :: Query
+                            Rp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,rpHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPriorList ++ "]',1)")) :: Query
+                            Noth -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,nothHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPriorList ++ "]',1)")) :: Query
             stmt1 <- prepareStmt conn sqlstat
             oks <- executeStmt conn stmt1 []             -- Insert the described structural gene.
             putStrLn $ "updateSyntaxAmbiResolSample': Last inserted row with ID " ++ show (getOkLastInsertID oks)

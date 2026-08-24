@@ -11,6 +11,7 @@ module Database (
   fromMySQLInt64U,             -- MySQLValue (MySQLInt64U) -> Int
   fromMySQLInt64,              -- MySQLValue (MySQLInt64) -> Int
   fromMySQLDecimal,            -- MySQLValue (MySQLDecimal) -> Int
+  fromMySQLBytes,              -- MySQLValue (MySQLBytes) -> ByteString
   fromMySQLText,               -- MySQLValue (MySQLText) -> String
   fromMySQLNullText,           -- MySQLValue (MySQLNull)-> String
   fromMySQLNullVarchar,        -- MySQLValue (MySQLNull) -> String
@@ -23,7 +24,7 @@ module Database (
   toMySQLInt64U,               -- Int -> MySQLValue (MySQLInt64U)
   toMySQLInt64,                -- Int -> MySQLValue (MySQLInt64)
   toMySQLDecimal,              -- Int -> MySQLValue (MySQLDecimal)
-  toMySQLBytes,                -- String -> MySQLValue (MySQLBytes)
+  toMySQLBytes,                -- ByteString -> MySQLValue (MySQLBytes)
   toMySQLText,                 -- String -> MySQLValue (MySQLText)
   toMySQLNullText,             -- MySQLValue (MySQLNull)
   toMySQLNullVarchar,          -- MySQLValue (MySQLNull)
@@ -53,6 +54,7 @@ module Database (
   readStreamByInt32UTextTextText,          -- [(Int, String, String, String)] -> S.InputStream [MySQLValue] -> IO [(Int, String, String, String)]
   readStreamByTextText,            -- [(String, String)] -> S.InputStream [MySQLValue] -> IO [(String, String)]
   readStreamByTextTextTextText,    -- [(String, String, String, String)] -> S.InputStream [MySQLValue] -> IO [(String, String, String, String)]
+  readStreamByTextTextTextTextText,        -- [(String, String, String, String, String)] -> S.InputStream [MySQLValue] -> IO [(String, String, String, String, String)]
   readStreamByInt32UTextText,      -- [(Int, (String, String))] -> S.InputStream [MySQLValue] -> IO [(Int, (String, String))]
   readStreamByInt32UTextTextTextTextInt8,    -- [(Int, (String, String, String, String, Int))] -> S.InputStream [MySQLValue] -> IO [(Int, (String, String, String, String, Int))]
   readStreamByTextTextInt8,        -- [String] -> S.InputStream [MySQLValue] -> IO [String]
@@ -77,6 +79,7 @@ import           Data.Tuple.Utils
 import           Data.Int
 import           Data.Text as DT hiding (length, map, head, tail, last, foldl)
 import           Data.Word
+import qualified Data.ByteString as BS
 import           Data.ByteString.Char8 as BC hiding (putStr, putStrLn, readFile, map, head, tail, last, length)
 import           Utils
 import           Phrase(getPhraCateFromString, getPhraCateListFromString)
@@ -84,8 +87,9 @@ import           Phrase(getPhraCateFromString, getPhraCateListFromString)
 import qualified Data.Text.IO as TIO
 import           Data.Aeson (encode)
 import qualified Data.ByteString.Lazy as BL
-import           Data.ByteString (toStrict)
-import           Data.Text.Encoding (decodeUtf8)
+import           Data.ByteString (toStrict, ByteString)
+import qualified Data.Text as T
+import           Data.Text.Encoding (encodeUtf8, decodeUtf8)
 
 fromMySQLInt8 :: MySQLValue -> Int
 fromMySQLInt8 (MySQLInt8 a) = read (show a) :: Int
@@ -115,6 +119,10 @@ fromMySQLInt64 _ = error "fromMySQLInt64: Parameter error."
 fromMySQLDecimal :: MySQLValue -> Double
 fromMySQLDecimal (MySQLDecimal a) = read (show a) :: Double
 fromMySQLDecimal _ = error "fromMySQLDecimal: Parameter error."
+
+fromMySQLBytes :: MySQLValue -> ByteString
+fromMySQLBytes (MySQLBytes a) = a
+fromMySQLBytes _ = error "fromMySQLBytes: Parameter error."
 
 fromMySQLText :: MySQLValue -> String
 fromMySQLText (MySQLText a)
@@ -161,8 +169,8 @@ toMySQLInt64 v = MySQLInt64 (read (show v) :: Int64)
 toMySQLDecimal :: Int -> MySQLValue
 toMySQLDecimal v = MySQLDecimal (read (show v) :: Scientific)
 
-toMySQLBytes :: String -> MySQLValue
-toMySQLBytes v = MySQLBytes (BC.pack v)                                         -- Convert String to ByteString
+toMySQLBytes :: ByteString -> MySQLValue
+toMySQLBytes v = MySQLBytes v
 
 toMySQLText :: String -> MySQLValue
 toMySQLText v = MySQLText (DT.pack v)
@@ -320,6 +328,16 @@ readStreamByTextTextTextText es is = do
         Just x -> readStreamByTextTextTextText (es ++ [(fromMySQLText (x!!0), fromMySQLText (x!!1), fromMySQLText (x!!2), fromMySQLText (x!!3))]) is
         Nothing -> return es
 
+{- Read a value from input stream [MySQLValue], append it to existed list [(String, String, String, String, String)], then read the next,
+ - until read Nothing.
+ - Here [MySQLValue] is [MySQLText, MySQLText, MySQLText, MySQLText, MySQLText].
+ -}
+readStreamByTextTextTextTextText :: [(String, String, String, String, String)] -> S.InputStream [MySQLValue] -> IO [(String, String, String, String, String)]
+readStreamByTextTextTextTextText es is = do
+    S.read is >>= \x -> case x of                                        -- Dumb element 'case' is an array with type [MySQLValue]
+        Just x -> readStreamByTextTextTextTextText (es ++ [(fromMySQLText (x!!0), fromMySQLText (x!!1), fromMySQLText (x!!2), fromMySQLText (x!!3), fromMySQLText (x!!4))]) is
+        Nothing -> return es
+
 {- Read a value from input stream [MySQLValue], append it to existed list [(Int, (String, String)], then read the next,
  - until read Nothing.
  - Here [MySQLValue] is [MySQLInt32U, MySQLText, MySQLText].
@@ -370,6 +388,10 @@ readStreamByTextTextDouble es is = do
         Just x -> readStreamByTextTextDouble (es ++ [(fromMySQLText (x!!0), fromMySQLText (x!!1),  fromMySQLDouble (x!!2))]) is
         Nothing -> return es
 
+-- In MySQL, ID fot charset 'utf8mb4_0900_ai_ci'.
+utf8mb4_0900_ai_ci :: Word8
+utf8mb4_0900_ai_ci = 255
+
 -- Get a connection to MySQL database according to a configuration file.
 getConn :: IO MySQLConn
 getConn = do
@@ -380,20 +402,23 @@ getConn = do
     let database = getConfProperty "Database" confInfo
 --  putStrLn $ "host:" ++ host ++ ", user:" ++ user ++ ", password:" ++ password ++ ", database:" ++ database
 
-    connect defaultConnectInfo {
-      ciHost = host,
-      ciUser = BC.pack user,             -- Change String to ByteString
-      ciPassword = BC.pack password,
-      ciDatabase = BC.pack database
-    }
+    connect defaultConnectInfo
+      { ciCharset = utf8mb4_0900_ai_ci
+      , ciHost = host
+      , ciUser = BC.pack user                    -- Change String to ByteString
+      , ciPassword = BC.pack password
+      , ciDatabase = BC.pack database
+      }
 
 -- Get a connection to database 'ccg4c' with user 'wqj'.
 getConnByUserWqj :: IO MySQLConn
-getConnByUserWqj = connect defaultConnectInfo {
-    ciHost = "127.0.0.1",
-    ciUser = "wqj",
-    ciPassword = "wqj",
-    ciDatabase = "ccg4c"
+getConnByUserWqj = connect defaultConnectInfo
+    {
+      ciCharset = utf8mb4_0900_ai_ci
+    , ciHost = "127.0.0.1"
+    , ciUser = "wqj"
+    , ciPassword = "wqj"
+    , ciDatabase = "ccg4c"
     }
 
 -- Recognize type OK in module mysql-haskell.

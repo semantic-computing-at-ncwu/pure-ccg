@@ -61,6 +61,8 @@ module CL (
     termSeq2Term',    -- [Term] -> Term
     curriedFuncForOnePara,  -- Term -> [Term] -> Int -> Term
     getTermFromStr,   -- String -> Term
+    biTreeEqualsWithTerm,   -- Term -> BiTree Term
+    removePreComb,          -- Term -> [Term] -> Term
     isStringOfCLTerm, -- String -> Bool
     termStr2SymbolList,     -- String -> [String]
     symbolList2TermStr,     -- Int -> [String] -> String
@@ -464,6 +466,25 @@ getTermFromStr str
     spaceIdx = indexOfDelimiter 0 0 0 ' ' str'
     mStr = take spaceIdx str'
     nStr = drop (spaceIdx + 1) str'
+
+{- The output string of a CL term equals with a binary tree whose nodes are CL terms.
+ - Term :: ConstTerm String | VarTerm String | JuxTerm Term Term
+ -}
+biTreeEqualsWithTerm :: Term -> BiTree Term
+biTreeEqualsWithTerm (ConstTerm a) = Node (ConstTerm a) Empty Empty
+biTreeEqualsWithTerm (VarTerm a) = Node (VarTerm a) Empty Empty
+biTreeEqualsWithTerm (JuxTerm a b) = Node (JuxTerm a b) (biTreeEqualsWithTerm a) (biTreeEqualsWithTerm b)
+
+{- Remove combinators from a term.
+ - Such as, (X P), where 'X' is a combinator to be removed, the consequent after removing is 'P'.
+ - All combinators are listed in a list.
+ - Recursively, the leading combinators in 'P' are also removed.
+ -}
+removePreComb :: Term -> [Term] -> Term
+removePreComb (JuxTerm a b) combs
+    | elem a combs = removePreComb b combs
+    | otherwise = JuxTerm (removePreComb a combs) (removePreComb b combs)
+removePreComb t _ = t
 
 {- Decide a string whether it is the string of a CL term.
  - (1) A string satisfies the following conditions is well-formatted: Starts with not '(' and contain no space character.

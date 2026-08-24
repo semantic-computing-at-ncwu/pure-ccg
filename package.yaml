@@ -46,6 +46,7 @@ dependencies:
 - vector
 - aeson
 - filepath
+- list-shuffle
 
 library:
   source-dirs: src

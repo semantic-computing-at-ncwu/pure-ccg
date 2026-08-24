@@ -30,7 +30,7 @@ import AmbiResol
 import Clustering
 import KMedoids
 import Maintain
-import BiTreeLSTM (testPipeline)
+import BiTreeLSTM
 import Output (showSnScript2List)
 import Text.Printf
 import qualified Numeric.LinearAlgebra as LA
@@ -876,9 +876,11 @@ doExperiments username = do
     putStrLn " D -> Test tag2Vec in Module Statistics"
     putStrLn " E -> Test stru2Vec in Module Statistics"
     putStrLn " F -> Test Binary Tree LSTM for syntactic disambiguity in Module BiTreeLSTM"
+    putStrLn " 10 -> Test the building of sample set in Module BiTreeLSTM"
+    putStrLn " 11 -> Train binary tree LSTM in Module BiTreeLSTM"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","10","11","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -899,6 +901,8 @@ doExperiments username = do
                "D" -> doTestTag2Vec username
                "E" -> doTestStru2Vec username
                "F" -> doTestBiTreeLSTM username
+               "10" -> doTestBuildSampleSetInBiTreeLSTM username
+               "11" -> doTrainBiTreeLSTM username
              doExperiments username                            -- Rear recursion
 
 {- B.1 Parse the sentence indicated by serial_num, here 'username' has not been used.
@@ -1292,6 +1296,43 @@ doTestBiTreeLSTM username = do
       then testPipeline
       else putStr ""
 
+{- B.10 Test the building of sample set in Module BiTreeLSTM.
+ -}
+doTestBuildSampleSetInBiTreeLSTM :: String -> IO ()
+doTestBuildSampleSetInBiTreeLSTM username = do
+    confInfo <- readFile "Configuration"
+    let
+      syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+      dim_word_str = getConfProperty "dim_word" confInfo
+      dim_cate_str = getConfProperty "dim_cate" confInfo
+      dim_tag_str = getConfProperty "dim_tag" confInfo
+      dim_stru_str = getConfProperty "dim_stru" confInfo
+      projDimStr = getConfProperty "projDim" confInfo
+      hidDimStr = getConfProperty "hidDim" confInfo
+
+      dim_cate = read dim_cate_str :: Int
+      dim_tag = read dim_tag_str :: Int
+      dim_stru = read dim_stru_str :: Int
+
+    putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
+    putStrLn $ " dim_word: " ++ dim_word_str
+    putStrLn $ " dim_cate: " ++ dim_cate_str
+    putStrLn $ " dim_tag: " ++ dim_tag_str
+    putStrLn $ " dim_stru: " ++ dim_stru_str
+
+    let prompt = " Test the building of sample set in Module BiTreeLSTM, are you sure? [y/n] (RETURN for 'y'): "
+    answer <- getLineUntil prompt ["y","n"] True
+    if answer == "y"
+      then do
+        sampleSet <- buildSampleSet dim_cate dim_tag dim_stru
+        putStrLn $ "Size of sample set = " ++ show (length sampleSet)
+      else putStr ""
+
+{- B.11 Training binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM, then testing the model.
+ -}
+doTrainBiTreeLSTM :: String -> IO ()
+doTrainBiTreeLSTM username = testPipeline2
+
 -- C. Various maintenance tools.
 doMaintenance :: String -> IO ()
 doMaintenance username = do
@@ -1345,6 +1386,25 @@ doRearrangeIdinCertainTable username =
         putStrLn $ "Table " ++ tblName ++ "_bak was created."
 
         case tblName of
+          x | isPrefixOf "stru_gene3a0s_" x -> do
+            let sqlstat = DS.fromString $ "insert into " ++ tblName ++ "_bak (leftOverTree, leftOverSeman, rightOverTree, rightOverSeman, clauTagPrior, lpHitCount, rpHitCount, nothHitCount) select leftOverTree, leftOverSeman, rightOverTree, rightOverSeman, clauTagPrior, lpHitCount, rpHitCount, nothHitCount from " ++ tblName     -- Copy table data to new table.
+            stmt' <- prepareStmt conn sqlstat
+            ok <- executeStmt conn stmt' []
+            putStrLn $ show (getOkAffectedRows ok) ++ " rows were inserted into " ++ tblName ++ "_bak."
+            let sqlstat = DS.fromString $ "truncate table " ++ tblName          -- Remove data from old table.
+            stmt' <- prepareStmt conn sqlstat
+            executeStmt conn stmt' []
+            putStrLn $ "Table " ++ tblName ++ " truncated."
+            let sqlstat = DS.fromString $ "insert into " ++ tblName ++ " select * from " ++ tblName ++ "_bak"    -- Copy table data to old table.
+            stmt' <- prepareStmt conn sqlstat
+            ok <- executeStmt conn stmt' []
+            putStrLn $ show (getOkAffectedRows ok) ++ " rows were copied into " ++ tblName
+            let sqlstat = DS.fromString $ "drop table " ++ tblName ++ "_bak"    -- Drop new table.
+            stmt' <- prepareStmt conn sqlstat
+            executeStmt conn stmt' []
+            putStrLn $ "Table " ++ tblName ++ "_bak was dropped."
+            close conn
+
           x | elem x ["stru_gene_202408", "stru_gene_202412", "stru_gene_202501"] -> do
             let sqlstat = DS.fromString $ "insert into " ++ tblName ++ "_bak (leftExtend, leftOver, rightOver, rightExtend, overtype, clauTagPrior, lpHitCount, rpHitCount, nothHitCount) select leftExtend, leftOver, rightOver, rightExtend, overtype, clauTagPrior, lpHitCount, rpHitCount, nothHitCount from " ++ tblName     -- Copy table data to new table.
             stmt' <- prepareStmt conn sqlstat
