@@ -106,8 +106,9 @@ syntax_resol_sample_startsn:1
 syntax_resol_sample_endsn:350
 
 # Index number range of the used syntax ambiguity resolution model samples.
-syntax_resol_sample_startId:28
-syntax_resol_sample_endId:28
+# Number of samples in stru_gene3a0s_20260817 is 13857.
+syntax_resol_sample_startId:1
+syntax_resol_sample_endId:10
 
 # Algo. of pruning in resolving syntactic ambiguity.
 prune_algo:NoDemandPhrase
@@ -283,6 +284,9 @@ lr:0.008
 
 # Epochs in training Neural Network
 epochs:800
+
+# Size of one sample batch
+batchSize:64
 
 # Early stop patience in training Neural Network
 earlyStopPatience:5

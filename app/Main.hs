@@ -877,7 +877,7 @@ doExperiments username = do
     putStrLn " E -> Test stru2Vec in Module Statistics"
     putStrLn " F -> Test Binary Tree LSTM for syntactic disambiguity in Module BiTreeLSTM"
     putStrLn " 10 -> Test the building of sample set in Module BiTreeLSTM"
-    putStrLn " 11 -> Train binary tree LSTM in Module BiTreeLSTM"
+    putStrLn " 11 -> Train Binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM"
     putStrLn " 0 -> Go back to the upper layer"
 
     line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","10","11","0"] True
@@ -1328,7 +1328,7 @@ doTestBuildSampleSetInBiTreeLSTM username = do
         putStrLn $ "Size of sample set = " ++ show (length sampleSet)
       else putStr ""
 
-{- B.11 Training binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM, then testing the model.
+{- B.11 Training Binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM, then testing the model.
  -}
 doTrainBiTreeLSTM :: String -> IO ()
 doTrainBiTreeLSTM username = testPipeline2
@@ -1349,9 +1349,10 @@ doMaintenance username = do
     putStrLn " A -> Create semantic combinator for every clause in a treebank"
     putStrLn " B -> Create semantic context for every word in clauses"
     putStrLn " C -> Create intersion juxtapositions for every clause in a treebank"
+    putStrLn " D -> Check syntactic tree and syntax-semantic tree are isomorphic or not"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -1369,6 +1370,7 @@ doMaintenance username = do
                "A" -> doCreateSemanticCombinatorForClause      -- Defined in Module 'Maintain'
                "B" -> doCreateSemanticContextForWord           -- Defined in Module 'Maintain'
                "C" -> doCreateIntersionJuxtapositionForClause  -- Defined in Module 'Maintain'
+               "D" -> checkIsomorphicBetwSynTreeAndSynSemTree  -- Defined in Module 'Maintain'
              doMaintenance username                            -- Rear recursion
 
 -- C_1. Rearrange index column in a certain table.

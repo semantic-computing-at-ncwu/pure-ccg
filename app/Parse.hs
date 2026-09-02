@@ -1,7 +1,3 @@
-
-
-
-
 -- Copyright (c) 2019-2026 North China University of Water Resources and Electric Power
 -- All rights reserved.
 
@@ -25,6 +21,7 @@ module Parse (
     findDescen,        -- PhraCate -> [PhraCate] -> [PhraCate]
     findAnces,         -- PhraCate -> [PhraCate] -> [PhraCate]
     findATree,         -- PhraCate -> [PhraCate] -> BiTree PhraCate
+    findAllTree,       -- PhraCate -> [PhraCate] -> [BiTree PhraCate]
     findForest,        -- [PhraCate] -> [BiTree PhraCate]
     growForest,        -- OnOff -> [[PhraCate]] -> [PhraCate] -> [[PhraCate]]
     growTree,          -- OnOff -> [PhraCate] -> [PhraCate] -> [[PhraCate]]
@@ -1308,6 +1305,7 @@ findAnces pc clo
 
 {- Find syntactic tree with a given phrasal category as its root from the transitive closure of phrasal categories.
  - The rootTree is defined as (Node r Empty Empty), where r is the root, and left and right subtrees wait for growing.
+ - When more than one pair of parents exists, report error and stop.
  -}
 findATree :: PhraCate -> [PhraCate] -> BiTree PhraCate
 findATree root clo
@@ -1317,9 +1315,24 @@ findATree root clo
         parents = findSplitCate root clo           -- [(PhraCate, PhraCate)]
         parent = case parents of
                    [] -> (nilPhra, nilPhra)
-                   _ -> parents!!0                 -- Suppose the root has only one pair of parents.
+                   ps | length ps > 1 -> error $ "findATree: Finding more than one tree. root = " ++ show root ++ ", parents = " ++ show parents
+                   _ -> parents!!0                 -- Without syntactic ambiguity, the root has only one pair of parents.
         father = fst parent
         mother = snd parent
+
+{- Find all syntactic trees with a given phrasal category as its root from the transitive closure of phrasal categories.
+ - One such tree is defined as (Node r Empty Empty), where r is the root, and left and right subtrees wait for growing.
+ -}
+findAllTree :: PhraCate -> [PhraCate] -> [BiTree PhraCate]
+findAllTree root clo
+    | root == nilPhra = [Empty]
+    | otherwise = concat [ mkNode f m | (f, m) <- parents ]
+      where
+        parents = findSplitCate root clo  -- [(PhraCate, PhraCate)]
+        mkNode father mother =
+            let leftTrees  = findAllTree father clo
+                rightTrees = findAllTree mother clo
+            in [ Node root l r | l <- leftTrees, r <- rightTrees ]
 
 {- Find the forest of syntactic trees from a list of phrasal categories.
  - Step 1. Filter all roots by attribue Act being True.

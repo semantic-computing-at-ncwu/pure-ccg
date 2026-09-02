@@ -45,6 +45,7 @@ module Database (
   getOkStatus,                 -- OK -> Word16
   getOkWarningCnt,             -- OK -> Word16
   readStreamByText,            -- [String] -> S.InputStream [MySQLValue] -> IO [String]
+  readStreamByInt32U,          -- [Int] -> S.InputStream [MySQLValue] -> IO [Int]
   readStreamByInt64,           -- [Int] -> S.InputStream [MySQLValue] -> IO [Int]
   readStreamByInt8Decimal,         -- [(Int,Double)] -> S.InputStream [MySQLValue] -> IO [(Int,Double)]
   readStreamByInt8Int64,           -- [[Int]] -> S.InputStream [MySQLValue] -> IO [[Int]]
@@ -236,6 +237,16 @@ readStreamByText :: [String] -> S.InputStream [MySQLValue] -> IO [String]
 readStreamByText es is = do
     S.read is >>= \x -> case x of                                       -- Dumb element 'case' is an array with type [MySQLValue]
         Just [MySQLText v] -> readStreamByText (es ++ [fromMySQLText (MySQLText v)]) is
+        Nothing -> return es
+
+{- Read a value from input stream [MySQLValue], append it to existed Double list, then read the next,
+ - until read Nothing.
+ - For every element of [MySQLValue], it is value list of Decimal.
+ -}
+readStreamByInt32U :: [Int] -> S.InputStream [MySQLValue] -> IO [Int]
+readStreamByInt32U es is = do
+    S.read is >>= \x -> case x of                                        -- Dumb element 'case' is an array with type [MySQLValue]
+        Just x -> readStreamByInt32U (es ++ [fromMySQLInt32U (x!!0)]) is
         Nothing -> return es
 
 {- Read a value from input stream [MySQLValue], append it to existed Double list, then read the next,

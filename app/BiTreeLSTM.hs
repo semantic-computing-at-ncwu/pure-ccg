@@ -24,13 +24,14 @@ import qualified Data.Text.Encoding as TE
 import qualified System.IO.Streams as S
 import qualified Data.String as DS
 import Data.Map.Strict (Map)
-import Data.Map.Strict as Map hiding (map, foldl, size, filter, splitAt)
+import Data.Map.Strict as Map hiding (map, foldl, size, filter, splitAt, foldl')
 
 import System.Random (randomRIO, mkStdGen, randomR, StdGen, newStdGen)
 import List.Shuffle (shuffle_)
 import Data.Maybe (fromMaybe)
+import Data.List (foldl')
 import Data.Tuple.Utils (fst3, snd3, thd3)
-import Control.Monad (when)
+import Control.Monad (when, foldM)
 import GHC.Generics (Generic)
 import Control.Exception (SomeException, bracket, catch)
 import System.IO (readFile, writeFile)
@@ -73,7 +74,7 @@ fromMySQLJSON _ = Nothing
 
 -- Different with that in Module Utils, Empty tree is thought as a leaf.
 isLeafNode :: BiTree a -> Bool
-isLeafNode Empty = True
+isLeafNode Empty = True                  -- Easy to processing
 isLeafNode (Node _ l r) = isLeafNode l && isLeafNode r
 
 -- ===================== 目标动作 One-Hot 转换 =====================
@@ -84,14 +85,14 @@ actionToOneHot Noth = LA.fromList [0.0, 0.0, 1.0]
 
 vecToAction :: Vector Double -> Prior
 vecToAction v
-  | LA.size v /= 3 = Noth
+  | LA.size v /= 3 = Noth               -- Easy to processing
   | otherwise = case LA.maxIndex v of
       0 -> Lp
       1 -> Rp
       2 -> Noth
 
 -- ===================== 语法树定义 =====================
-type NodeFeat = Vector Double
+type NodeFeat = Vector Double            -- Embedding vector, [Double], of a word or a phrase.
 data SyntaxTree a = EmptySTree
                   | STreeNode
                       { nodeData :: a
@@ -112,27 +113,30 @@ data SampleRecord = SampleRecord
                     } deriving (Show, Generic)
 
 -- ===================== 激活函数与导数（修复接口一致性） =====================
+-- 激活函数 σ
 sigmoid :: Double -> Double
 sigmoid x = 1 / (1 + exp (-x))
 
+-- 激活函数 σ 的向量版（逐元素计算 σ）
 vecSigmoid :: Vector Double -> Vector Double
 vecSigmoid = cmap sigmoid
 
--- 输入：激活前原始 x
+-- 激活函数 σ 的导数的向量版（逐元素计算 σ 导数）
 sigmoidDeriv :: Vector Double -> Vector Double
 sigmoidDeriv x =
   let v1 = konst 1 (size x) :: Vector Double
       sigVec = cmap sigmoid x
   in sigVec * (v1 - sigVec)
 
+-- 双曲函数 tanh 的向量版
 vecTanh :: Vector Double -> Vector Double
 vecTanh = cmap tanh
 
--- 输入：激活前原始 z
+-- 双曲函数 tanh 的导数的向量版
 tanhDeriv :: Vector Double -> Vector Double
 tanhDeriv z = cmap (\x -> 1 - tanh x * tanh x) z
 
--- 【修复】softmax：减去最大值防止 exp 溢出
+-- 软性最大值函数（Softmax），带有减去最大值防止 exp 溢出。
 softmax :: Vector Double -> Vector Double
 softmax vec =
   let m = LA.maxElement vec
@@ -141,6 +145,7 @@ softmax vec =
       sumExpClip = max sumExp 1e-12
   in cmap (/ sumExpClip) expVec
 
+-- 损失的交叉熵 -Σ l*log(p)
 crossEntropy :: Vector Double -> Vector Double -> Double
 crossEntropy pred label
   | LA.size pred /= LA.size label = error "crossEntropy: pred/label dimension mismatch"
@@ -152,62 +157,72 @@ data NetParam = NetParam
   , leafProjB    :: Vector Double
   , nonLeafProjW :: Matrix Double
   , nonLeafProjB :: Vector Double
-  , embWeight    :: Matrix Double
-  , embBias      :: Vector Double
-  , lstmInpW     :: Matrix Double
-  , lstmForgetLW :: Matrix Double
-  , lstmForgetRW :: Matrix Double
-  , lstmOutW     :: Matrix Double
-  , lstmCellW    :: Matrix Double
-  , lstmInpB     :: Vector Double
-  , lstmForgetLB :: Vector Double
-  , lstmForgetRB :: Vector Double
-  , lstmOutB     :: Vector Double
-  , lstmCellB    :: Vector Double
+  , inpW         :: Matrix Double
+  , inpLW        :: Matrix Double
+  , inpRW        :: Matrix Double
+  , inpB         :: Vector Double
+  , forgetW      :: Matrix Double
+  , forgetLW     :: Matrix Double
+  , forgetRW     :: Matrix Double
+  , forgetB      :: Vector Double
+  , outW         :: Matrix Double
+  , outLW        :: Matrix Double
+  , outRW        :: Matrix Double
+  , outB         :: Vector Double
+  , cellCandW    :: Matrix Double
+  , cellCandLW   :: Matrix Double
+  , cellCandRW   :: Matrix Double
+  , cellCandB    :: Vector Double
   , clsWeight    :: Matrix Double
   , clsBias      :: Vector Double
   } deriving (Show)
 
+-- 求隐层维度
 netHidDim :: NetParam -> Int
-netHidDim NetParam{embWeight = w} = fst (LA.size w)
+netHidDim NetParam{inpW = w} = fst (LA.size w)
 
+-- 求投影层维度
 netProjDim :: NetParam -> Int
-netProjDim netParam = fst (LA.size $ leafProjW netParam)
+netProjDim netParam = fst . LA.size $ leafProjW netParam
 
+-- 梯度网络，就是参数网络。每个参数都有损失Loss对它的偏导数，dLdp。所有偏导数，组成梯度，形成最快下降方向。
 type NetGrad = NetParam
 
+-- 基本记忆单元的状态包括：隐状态 h 和记忆状态 c。整个 LSTM 网络的基本记忆单元有 hidDim 个，hidDim 是隐层维度。
+-- 下一个时间步（父节点）的状态依赖当前时间步（子节点）的状态。
 data LSTMState = LSTMState
                  { hState :: Vector Double
                  , cState :: Vector Double
                  } deriving (Show)
 
+-- 空的 LSTM 状态：所有记忆单元的 h 和 c 都是 0.0
 emptyLSTMState :: Int -> LSTMState
 emptyLSTMState d = LSTMState (konst 0.0 d) (konst 0.0 d)
 
--- 前向缓存节点
+-- 前向计算到一个时间步（节点）时，存储计算结果，后者用于后向梯度计算。
 data NodeCache = NodeCache
-  { ncFeat      :: NodeFeat
-  , ncProjFeat  :: Vector Double
-  , ncEmbOut    :: Vector Double
-  , ncInpGatePre :: Vector Double  -- sigmoid 前预激活
-  , ncForgetLPre :: Vector Double
-  , ncForgetRPre :: Vector Double
-  , ncOutGatePre :: Vector Double
-  , ncCellCandPre :: Vector Double
-  , ncInpGate   :: Vector Double
-  , ncForgetLG  :: Vector Double
-  , ncForgetRG  :: Vector Double
-  , ncOutGate   :: Vector Double
-  , ncCellCand  :: Vector Double
-  , ncNewC      :: Vector Double
-  , ncNewH      :: Vector Double
-  , ncLeftH     :: Vector Double
-  , ncLeftC     :: Vector Double
-  , ncRightH    :: Vector Double
-  , ncRightC    :: Vector Double
-  , ncIsLeaf    :: Bool
+  { ncFeat      :: NodeFeat          -- 节点的特征向量, {cateVec; wordVec} 或 {cateVec; tagVec; struVec}
+  , ncProjFeat  :: Vector Double     -- 投影层输出向量, 维度是 projDim
+  , ncInpGatePre :: Vector Double    -- 输入门激活前的值 z 的向量
+  , ncForgetLPre :: Vector Double    -- 左遗忘门激活前的值 z 的向量
+  , ncForgetRPre :: Vector Double    -- 右遗忘门激活前的值 z 的向量
+  , ncOutGatePre :: Vector Double    -- 输出门激活前的值 z 的向量
+  , ncCellCandPre :: Vector Double   -- 候选的细胞状态激活前的值 z 的向量
+  , ncInpGate   :: Vector Double     -- 输入门（激活后）输出 a
+  , ncForgetLG  :: Vector Double     -- 左遗忘门（激活后）输出 a
+  , ncForgetRG  :: Vector Double     -- 右遗忘门（激活后）输出 a
+  , ncOutGate   :: Vector Double     -- 输出门（激活后）输出 a
+  , ncCellCand  :: Vector Double     -- 候选的细胞状态（激活后）的值 a
+  , ncNewC      :: Vector Double     -- 更新后的细胞状态
+  , ncNewH      :: Vector Double     -- 更新后的隐状态
+  , ncLeftH     :: Vector Double     -- 当前节点收到的左孩子隐状态
+  , ncLeftC     :: Vector Double     -- 当前节点收到的左孩子细胞状态
+  , ncRightH    :: Vector Double     -- 当前节点收到的右孩子隐状态
+  , ncRightC    :: Vector Double     -- 当前节点收到的右孩子细胞状态
+  , ncIsLeaf    :: Bool              -- 当前节点是否叶子的显性标记
   } deriving (Show)
 
+-- 空的节点缓存，根据是否叶子，有一些区别。
 emptyNodeCache :: Bool -> Int -> Int -> Int -> NodeCache
 emptyNodeCache isLeaf featDim projDim hidDim =
   let
@@ -217,7 +232,6 @@ emptyNodeCache isLeaf featDim projDim hidDim =
   in NodeCache
    { ncFeat = featZero
    , ncProjFeat = projZero
-   , ncEmbOut = hidZero
    , ncInpGatePre = hidZero
    , ncForgetLPre = hidZero
    , ncForgetRPre = hidZero
@@ -237,28 +251,30 @@ emptyNodeCache isLeaf featDim projDim hidDim =
    , ncIsLeaf = isLeaf
    }
 
+-- 前向计算结果：根节点的状态（h, c）、与句法树同构的前向计算结果（每个节点有它的NodeCache实例）
 data TreeFwdResult = TreeFwdResult
   { tfRootState :: LSTMState
   , tfCacheTree :: SyntaxTree NodeCache
   } deriving (Show)
 
--- ===================== 特征投影 =====================
+-- 根据是否叶子，把输入的原始特征投影到给定维度的空间
 projectRawFeat :: NetParam -> Bool -> Vector Double -> Vector Double
 projectRawFeat NetParam{..} isLeaf rawFeat =
   let
-    expectedDim = if isLeaf
+    expectedRawDim = if isLeaf
       then snd $ LA.size leafProjW
       else snd $ LA.size nonLeafProjW
 
     actualDim = size rawFeat
   in
-    if actualDim /= expectedDim
-      then error $ "projectRawFeat: feature dimension mismatch, expected " ++ show expectedDim ++ ", got " ++ show actualDim
+    if actualDim /= expectedRawDim
+      then error $ "projectRawFeat: feature dimension mismatch, expected " ++ show expectedRawDim ++ ", got " ++ show actualDim
       else if isLeaf
         then leafProjW #> rawFeat + leafProjB
         else nonLeafProjW #> rawFeat + nonLeafProjB
 
 -- ===================== 参数初始化 =====================
+-- 随机向量
 randVec :: Int -> StdGen -> (Vector Double, StdGen)
 randVec n gen
   | n <= 0    = error "randVec: vector size > 0 required"
@@ -272,6 +288,7 @@ randVec n gen
           vec = LA.fromList xs
       in (vec, gen')
 
+-- 随机矩阵
 randMat :: Int -> Int -> StdGen -> (Matrix Double, StdGen)
 randMat rows cols gen
   | rows <=0 || cols <=0 = error "randMat: rows/cols >0 required"
@@ -281,148 +298,171 @@ randMat rows cols gen
           mat = LA.reshape cols vec
       in (mat, g')
 
+-- 初始化网络参数
 initNetParam :: Int -> Int -> Int -> Int -> IO NetParam
 initNetParam leafRawDim nonLeafRawDim projDim hidDim = do
   let
-    g0 = mkStdGen 42
+    g0 = mkStdGen 42                      -- 生成随机函数的种子
     (lProjW, g1) = randMat projDim leafRawDim g0
     (lProjB, g2) = randVec projDim g1
     (nlProjW, g3) = randMat projDim nonLeafRawDim g2
     (nlProjB, g4) = randVec projDim g3
-    (embW, g5) = randMat hidDim projDim g4
-    (embB, g6) = randVec hidDim g5
-    (lstmIW, g7) = randMat hidDim hidDim g6
-    (lstmFWL, g8) = randMat hidDim hidDim g7
-    (lstmFWR, g9) = randMat hidDim hidDim g8
-    (lstmOW, g10) = randMat hidDim hidDim g9
-    (lstmCW, g11) = randMat hidDim hidDim g10
-    (lstmIB, g12) = randVec hidDim g11
-    lstmFBL = konst 1.0 hidDim
-    lstmFBR = konst 1.0 hidDim
-    (lstmOB, g13) = randVec hidDim g12
-    (lstmCB, g14) = randVec hidDim g13
-    (clsW, g15) = randMat 3 (2 * hidDim) g14
-    (clsB, g16) = randVec 3 g15
+
+    (iW, g5) = randMat hidDim projDim g4      -- 输入门权重矩阵，用于右乘投影层输出向量
+    (iLW, g6) = randMat hidDim hidDim g5      -- 输入门左隐矩阵，用于右乘左孩子隐状态向量
+    (iRW, g7) = randMat hidDim hidDim g6      -- 输入门右隐矩阵，用于右乘右孩子隐状态向量
+    (iB, g8) = randVec hidDim g7              -- 输入门偏置向量
+
+    (fW, g9) = randMat hidDim projDim g8      -- 遗忘门权重矩阵，用于右乘投影层输出向量
+    (fLW, g10) = randMat hidDim hidDim g9     -- 遗忘门左隐矩阵，用于右乘左孩子隐状态向量
+    (fRW, g11) = randMat hidDim hidDim g10    -- 遗忘门右隐矩阵，用于右乘右孩子隐状态向量
+    (fB, g12) = randVec hidDim g11            -- 遗忘门偏置向量
+
+    (oW, g13) = randMat hidDim projDim g12    -- 输出门权重矩阵，用于右乘投影层输出向量
+    (oLW, g14) = randMat hidDim hidDim g13    -- 输出门左隐矩阵，用于右乘左孩子隐状态向量
+    (oRW, g15) = randMat hidDim hidDim g14    -- 输出门右隐矩阵，用于右乘右孩子隐状态向量
+    (oB, g16) = randVec hidDim g15            -- 输出门偏置向量
+
+    (cW, g17) = randMat hidDim projDim g16    -- 候选细胞状态权重矩阵，用于右乘投影层输出向量
+    (cLW, g18) = randMat hidDim hidDim g17    -- 候选细胞状态左隐矩阵，用于右乘左孩子隐状态向量
+    (cRW, g19) = randMat hidDim hidDim g18    -- 候选细胞状态右隐矩阵，用于右乘右孩子隐状态向量
+    (cB, g20) = randVec hidDim g19            -- 候选细胞状态偏置向量
+
+    (clsW, g21) = randMat 3 (2 * hidDim) g20  -- 两棵树的根节点的隐状态拼接到三分类的投影矩阵
+    (clsB, _) = randVec 3 g21                 -- 三分类投影的偏置向量
+
   return NetParam
     { leafProjW = lProjW, leafProjB = lProjB
     , nonLeafProjW = nlProjW, nonLeafProjB = nlProjB
-    , embWeight = embW, embBias = embB
-    , lstmInpW = lstmIW, lstmForgetLW = lstmFWL, lstmForgetRW = lstmFWR
-    , lstmOutW = lstmOW, lstmCellW = lstmCW
-    , lstmInpB = lstmIB, lstmForgetLB = lstmFBL, lstmForgetRB = lstmFBR
-    , lstmOutB = lstmOB, lstmCellB = lstmCB
+    , inpW = iW, inpLW = iLW, inpRW = iRW, inpB = iB
+    , forgetW = fW, forgetLW = fLW, forgetRW = fRW, forgetB = fB
+    , outW = oW, outLW = oLW, outRW = oRW, outB = oB
+    , cellCandW = cW, cellCandLW = cLW, cellCandRW = cRW, cellCandB = cB
     , clsWeight = clsW, clsBias = clsB
     }
 
+-- 清零网络参数的梯度，即损失 Loss 对每个参数的偏导数都是 0.0
 zeroGrad :: Int -> Int -> Int -> Int -> NetGrad
 zeroGrad leafRawDim nonLeafRawDim projDim hidDim =
   let zm r c = konst 0.0 (r, c)
       zv d = konst 0.0 d
   in NetParam
-    { leafProjW    = zm projDim leafRawDim
-    , leafProjB    = zv projDim
-    , nonLeafProjW = zm projDim nonLeafRawDim
-    , nonLeafProjB = zv projDim
-    , embWeight = zm hidDim projDim, embBias = zv hidDim
-    , lstmInpW  = zm hidDim hidDim, lstmForgetLW = zm hidDim hidDim, lstmForgetRW = zm hidDim hidDim
-    , lstmOutW  = zm hidDim hidDim, lstmCellW = zm hidDim hidDim
-    , lstmInpB  = zv hidDim, lstmForgetLB = zv hidDim, lstmForgetRB = zv hidDim
-    , lstmOutB  = zv hidDim, lstmCellB = zv hidDim
+    { leafProjW = zm projDim leafRawDim, leafProjB = zv projDim
+    , nonLeafProjW = zm projDim nonLeafRawDim, nonLeafProjB = zv projDim
+    , inpW  = zm hidDim projDim, inpLW = zm hidDim hidDim, inpRW = zm hidDim hidDim, inpB = zv hidDim
+    , forgetW = zm hidDim projDim, forgetLW = zm hidDim hidDim, forgetRW = zm hidDim hidDim, forgetB = zv hidDim
+    , outW  = zm hidDim projDim, outLW = zm hidDim hidDim, outRW = zm hidDim hidDim, outB = zv hidDim
+    , cellCandW = zm hidDim projDim, cellCandLW = zm hidDim hidDim, cellCandRW = zm hidDim hidDim, cellCandB = zv hidDim
     , clsWeight = zm 3 (2 * hidDim), clsBias = zv 3
     }
 
+-- ================= 梯度的辅助函数 =================
+-- 网络参数的梯度加
 gradAdd :: NetGrad -> NetGrad -> NetGrad
 gradAdd g1 g2 = NetParam
-    { leafProjW    = leafProjW g1 + leafProjW g2
-    , leafProjB    = leafProjB g1 + leafProjB g2
+    { leafProjW = leafProjW g1 + leafProjW g2
+    , leafProjB = leafProjB g1 + leafProjB g2
     , nonLeafProjW = nonLeafProjW g1 + nonLeafProjW g2
     , nonLeafProjB = nonLeafProjB g1 + nonLeafProjB g2
-    , embWeight = embWeight g1 + embWeight g2
-    , embBias   = embBias g1 + embBias g2
-    , lstmInpW  = lstmInpW g1 + lstmInpW g2
-    , lstmForgetLW = lstmForgetLW g1 + lstmForgetLW g2
-    , lstmForgetRW = lstmForgetRW g1 + lstmForgetRW g2
-    , lstmOutW  = lstmOutW g1 + lstmOutW g2
-    , lstmCellW = lstmCellW g1 + lstmCellW g2
-    , lstmInpB  = lstmInpB g1 + lstmInpB g2
-    , lstmForgetLB = lstmForgetLB g1 + lstmForgetLB g2
-    , lstmForgetRB = lstmForgetRB g1 + lstmForgetRB g2
-    , lstmOutB  = lstmOutB g1 + lstmOutB g2
-    , lstmCellB = lstmCellB g1 + lstmCellB g2
+    , inpW = inpW g1 + inpW g2
+    , inpLW = inpLW g1 + inpLW g2
+    , inpRW = inpRW g1 + inpRW g2
+    , inpB = inpB g1 + inpB g2
+    , forgetW = forgetW g1 + forgetW g2
+    , forgetLW = forgetLW g1 + forgetLW g2
+    , forgetRW = forgetRW g1 + forgetRW g2
+    , forgetB = forgetB g1 + forgetB g2
+    , outW = outW g1 + outW g2
+    , outLW = outLW g1 + outLW g2
+    , outRW = outRW g1 + outRW g2
+    , outB = outB g1 + outB g2
+    , cellCandW = cellCandW g1 + cellCandW g2
+    , cellCandLW = cellCandLW g1 + cellCandLW g2
+    , cellCandRW = cellCandRW g1 + cellCandRW g2
+    , cellCandB = cellCandB g1 + cellCandB g2
     , clsWeight = clsWeight g1 + clsWeight g2
-    , clsBias   = clsBias g1 + clsBias g2
+    , clsBias = clsBias g1 + clsBias g2
     }
 
+-- 网络参数的梯度缩放
 gradScale :: Double -> NetGrad -> NetGrad
 gradScale s g1 =
    NetParam
-    { leafProjW    = scale s (leafProjW g1)
-    , leafProjB    = scale s (leafProjB g1)
+    { leafProjW = scale s (leafProjW g1)
+    , leafProjB = scale s (leafProjB g1)
     , nonLeafProjW = scale s (nonLeafProjW g1)
     , nonLeafProjB = scale s (nonLeafProjB g1)
-    , embWeight = scale s (embWeight g1)
-    , embBias   = scale s (embBias g1)
-    , lstmInpW  = scale s (lstmInpW g1)
-    , lstmForgetLW = scale s (lstmForgetLW g1)
-    , lstmForgetRW = scale s (lstmForgetRW g1)
-    , lstmOutW  = scale s (lstmOutW g1)
-    , lstmCellW = scale s (lstmCellW g1)
-    , lstmInpB  = scale s (lstmInpB g1)
-    , lstmForgetLB = scale s (lstmForgetLB g1)
-    , lstmForgetRB = scale s (lstmForgetRB g1)
-    , lstmOutB  = scale s (lstmOutB g1)
-    , lstmCellB = scale s (lstmCellB g1)
+    , inpW = scale s (inpW g1)
+    , inpLW = scale s (inpLW g1)
+    , inpRW = scale s (inpRW g1)
+    , inpB = scale s (inpB g1)
+    , forgetW = scale s (forgetW g1)
+    , forgetLW = scale s (forgetLW g1)
+    , forgetRW = scale s (forgetRW g1)
+    , forgetB = scale s (forgetB g1)
+    , outW = scale s (outW g1)
+    , outLW = scale s (outLW g1)
+    , outRW = scale s (outRW g1)
+    , outB = scale s (outB g1)
+    , cellCandW = scale s (cellCandW g1)
+    , cellCandLW = scale s (cellCandLW g1)
+    , cellCandRW = scale s (cellCandRW g1)
+    , cellCandB = scale s (cellCandB g1)
     , clsWeight = scale s (clsWeight g1)
     , clsBias   = scale s (clsBias g1)
     }
 
--- 梯度裁剪（防止爆炸）
+-- 使梯度 L2 不超过给定的值（maxNorm）
 clipGrad :: Double -> NetGrad -> NetGrad
 clipGrad maxNorm g =
-  let vecNorm v = sqrt $ sumElements (v * v)
-      matNorm m = sqrt $ sumElements (m * m)
+  let vecNorm v = sqrt $ sumElements (v * v)     -- 欧几里得范数 L2，若元素是某一维度的值间距离，L2 就是欧式距离。
+      matNorm m = sqrt $ sumElements (m * m)     -- 求矩阵的 L2
       collectNorms = [ matNorm (leafProjW g), vecNorm (leafProjB g)
                      , matNorm (nonLeafProjW g), vecNorm (nonLeafProjB g)
-                     , matNorm (embWeight g), vecNorm (embBias g)
-                     , matNorm (lstmInpW g), matNorm (lstmForgetLW g), matNorm (lstmForgetRW g)
-                     , matNorm (lstmOutW g), matNorm (lstmCellW g)
-                     , vecNorm (lstmInpB g), vecNorm (lstmForgetLB g), vecNorm (lstmForgetRB g)
-                     , vecNorm (lstmOutB g), vecNorm (lstmCellB g)
+                     , matNorm (inpW g), matNorm (inpLW g), matNorm (inpRW g), vecNorm (inpB g)
+                     , matNorm (forgetW g), matNorm (forgetLW g), matNorm (forgetRW g), vecNorm (forgetB g)
+                     , matNorm (outW g), matNorm (outLW g), matNorm (outRW g), vecNorm (outB g)
+                     , matNorm (cellCandW g), matNorm (cellCandLW g), matNorm (cellCandRW g), vecNorm (cellCandB g)
                      , matNorm (clsWeight g), vecNorm (clsBias g)
                      ]
-      totalNorm = sqrt $ sum (map (^2) collectNorms)
+      totalNorm = sqrt $ sum (map (^2) collectNorms)             -- 网络参数的所有偏导数（即梯度）的 L2
       scaleFactor = if totalNorm > maxNorm then maxNorm / totalNorm else 1.0
   in gradScale scaleFactor g
 
+-- 按学习率、梯度更新网络参数
 updateParam :: Double -> NetGrad -> NetParam -> NetParam
 updateParam lr grad p =
   let
-    updateMat m gm = m + scale (-lr) gm
-    updateVec v gv = v + scale (-lr) gv
+    updateMat m gm = m + scale (-lr) gm          -- 更新矩阵的方法。若梯度为正，就减小参数；反之，就增大参数。
+    updateVec v gv = v + scale (-lr) gv          -- 更新向量
   in p
     { leafProjW    = updateMat (leafProjW p) (leafProjW grad)
     , leafProjB    = updateVec (leafProjB p) (leafProjB grad)
     , nonLeafProjW = updateMat (nonLeafProjW p) (nonLeafProjW grad)
     , nonLeafProjB = updateVec (nonLeafProjB p) (nonLeafProjB grad)
-    , embWeight = updateMat (embWeight p) (embWeight grad)
-    , embBias   = updateVec (embBias p) (embBias grad)
-    , lstmInpW  = updateMat (lstmInpW p) (lstmInpW grad)
-    , lstmForgetLW = updateMat (lstmForgetLW p) (lstmForgetLW grad)
-    , lstmForgetRW = updateMat (lstmForgetRW p) (lstmForgetRW grad)
-    , lstmOutW  = updateMat (lstmOutW p) (lstmOutW grad)
-    , lstmCellW = updateMat (lstmCellW p) (lstmCellW grad)
-    , lstmInpB  = updateVec (lstmInpB p) (lstmInpB grad)
-    , lstmForgetLB = updateVec (lstmForgetLB p) (lstmForgetLB grad)
-    , lstmForgetRB = updateVec (lstmForgetRB p) (lstmForgetRB grad)
-    , lstmOutB  = updateVec (lstmOutB p) (lstmOutB grad)
-    , lstmCellB = updateVec (lstmCellB p) (lstmCellB grad)
+    , inpW  = updateMat (inpW p) (inpW grad)
+    , inpLW  = updateMat (inpLW p) (inpLW grad)
+    , inpRW  = updateMat (inpRW p) (inpRW grad)
+    , inpB  = updateVec (inpB p) (inpB grad)
+    , forgetW = updateMat (forgetW p) (forgetW grad)
+    , forgetLW = updateMat (forgetLW p) (forgetLW grad)
+    , forgetRW = updateMat (forgetRW p) (forgetRW grad)
+    , forgetB = updateVec (forgetB p) (forgetB grad)
+    , outW  = updateMat (outW p) (outW grad)
+    , outLW  = updateMat (outLW p) (outLW grad)
+    , outRW  = updateMat (outRW p) (outRW grad)
+    , outB  = updateVec (outB p) (outB grad)
+    , cellCandW = updateMat (cellCandW p) (cellCandW grad)
+    , cellCandLW = updateMat (cellCandLW p) (cellCandLW grad)
+    , cellCandRW = updateMat (cellCandRW p) (cellCandRW grad)
+    , cellCandB = updateVec (cellCandB p) (cellCandB grad)
     , clsWeight = updateMat (clsWeight p) (clsWeight grad)
     , clsBias   = updateVec (clsBias p) (clsBias grad)
     }
 
 -- ===================== 【修复】标准 Child-Sum Tree-LSTM 前向传播 =====================
 treeForwardCached :: NetParam -> RawSyntaxTree -> TreeFwdResult
-treeForwardCached param EmptySTree =             -- 空节点不参与参数更新，缓存仅占位
+treeForwardCached param EmptySTree =         -- 空节点不参与参数更新，缓存仅占位
   let
     hidDim = netHidDim param
   in TreeFwdResult (emptyLSTMState hidDim) EmptySTree
@@ -437,14 +477,13 @@ treeForwardCached param st@STreeNode{nodeData = feat, stLeft = l, stRight = r, s
 
     hidDim = netHidDim param
     projFeat = projectRawFeat param isLeafNode feat
-    embOut = embWeight #> projFeat + embBias
 
     -- ========== 修复：输入门/输出门/cell候选 并入左右子树隐状态 ==========
-    inpGatePre     = lstmInpW #> embOut + lstmForgetLW #> hl + lstmForgetRW #> hr + lstmInpB
-    forgetLPre     = lstmForgetLW #> hl + lstmForgetLB
-    forgetRPre     = lstmForgetRW #> hr + lstmForgetRB
-    outGatePre     = lstmOutW #> embOut + lstmForgetLW #> hl + lstmForgetRW #> hr + lstmOutB
-    cellCandPre    = lstmCellW #> embOut + lstmForgetLW #> hl + lstmForgetRW #> hr + lstmCellB
+    inpGatePre     = inpW #> projFeat + inpLW #> hl + inpRW #> hr + inpB
+    forgetLPre     = forgetW #> projFeat + forgetLW #> hl + forgetRW #> hr + forgetB
+    forgetRPre     = forgetW #> projFeat + forgetLW #> hl + forgetRW #> hr + forgetB
+    outGatePre     = outW #> projFeat + outLW #> hl + outRW #> hr + outB
+    cellCandPre    = cellCandW #> projFeat + cellCandLW #> hl + cellCandRW #> hr + cellCandB
 
     inpGate     = vecSigmoid inpGatePre
     forgetLGate = vecSigmoid forgetLPre
@@ -452,13 +491,12 @@ treeForwardCached param st@STreeNode{nodeData = feat, stLeft = l, stRight = r, s
     outGate     = vecSigmoid outGatePre
     cellCand    = vecTanh cellCandPre
 
-    newC = forgetLGate * cl + forgetRGate * cr + inpGate * cellCand
+    newC = inpGate * cellCand + forgetLGate * cl + forgetRGate * cr
     newH = outGate * vecTanh newC
 
     cache = NodeCache
       { ncFeat = feat
       , ncProjFeat = projFeat
-      , ncEmbOut = embOut
       , ncInpGatePre = inpGatePre
       , ncForgetLPre = forgetLPre
       , ncForgetRPre = forgetRPre
@@ -469,101 +507,123 @@ treeForwardCached param st@STreeNode{nodeData = feat, stLeft = l, stRight = r, s
       , ncLeftH = hl, ncLeftC = cl, ncRightH = hr, ncRightC = cr
       , ncIsLeaf = isLeafNode
       }
-    cachedNode = STreeNode cache (tfCacheTree leftRes) (tfCacheTree rightRes) isLeafNode
+    cachedNode = STreeNode cache (tfCacheTree leftRes) (tfCacheTree rightRes) isLeafNode    -- 函数 tfCacheTree 读取子树前向计算结果的缓存树 STreeNode
   in TreeFwdResult (LSTMState newH newC) cachedNode
 
 -- ===================== 反向传播 Node BP =====================
-backwardNode :: NetParam
-             -> NodeCache
-             -> Vector Double
-             -> Vector Double
+-- 对一个节点（时间步），已知损失Loss对节点隐状态 h 和对细胞状态 c 的偏导数，用链式规则求 Loss 对各参数的偏导数
+backwardNode :: NetParam                       -- 当前的网络参数，其实就是基本记忆单元，它被用于所有样本（双二叉树）的前向计算
+             -> NodeCache                      -- 缓存的前向计算结果
+             -> Vector Double                  -- Loss 对本节点隐状态的偏导数
+             -> Vector Double                  -- Loss 对本节点细胞状态的偏导数
              -> (NetGrad, Vector Double, Vector Double, Vector Double, Vector Double, Vector Double)
+                      --  dLdhL          dLdcL          dLdhR          dLdcR          dLdRawFeat
 backwardNode NetParam{..} nc@NodeCache{..} dLdh dLdc =
   let
-    tanhNewC = vecTanh ncNewC
-    dTanhC = tanhDeriv ncNewC
-    dh_dc = ncOutGate * dTanhC
-    dLdnewC = dLdh * dh_dc + dLdc
+    tanhNewC = vecTanh ncNewC                  -- 对细胞状态 c 计算双曲函数 tanh
+    dTanhC = tanhDeriv ncNewC                  -- 对细胞状态 c 计算双曲函数的导数 tanh'
+    dhdnewC = ncOutGate * dTanhC               -- h = o * tanh(c), dhdnewC = o * tanh'(newC)
+    dLdnewC = dLdh * dhdnewC + dLdc            -- 父节点传下来的 dLdc, 必须加上。
 
-    dLdOutGate = dLdh * tanhNewC
-    dRawOut = dLdOutGate * sigmoidDeriv ncOutGatePre
+    dLdOutGate = dLdh * tanhNewC                          -- dLdo = dLdh * dhdo = dLdh * tanh(c)
+    dLdRawOut = dLdOutGate * sigmoidDeriv ncOutGatePre    -- dLdrawO = dLdo * dodrawO = dLdo * sigmoidDeriv ncOutGatePre
 
-    dLdInpGate = dLdnewC * ncCellCand
-    dRawInp = dLdInpGate * sigmoidDeriv ncInpGatePre
+    dLdInpGate = dLdnewC * ncCellCand                     -- dLdi = dLdc * dcdi = dLdc * ncCellCand
+    dLdRawInp = dLdInpGate * sigmoidDeriv ncInpGatePre    --  dLdrawI = dLdi * didrawI = dLdi * sigmoidDeriv ncInpGatePre
 
-    dLdForgetL = dLdnewC * ncLeftC
-    dRawForgetL = dLdForgetL * sigmoidDeriv ncForgetLPre
+    dLdForgetL = dLdnewC * ncLeftC                          -- dLdfl = dLdc * dcdfl = dLdc * ncLeftC
+    dLdRawForgetL = dLdForgetL * sigmoidDeriv ncForgetLPre  -- dLdrawFl = dLdfl * sigmoidDeriv ncForgetLPre
 
-    dLdForgetR = dLdnewC * ncRightC
-    dRawForgetR = dLdForgetR * sigmoidDeriv ncForgetRPre
+    dLdForgetR = dLdnewC * ncRightC                         -- dLdfr = dLdc * dcdfr = dLdc * ncRightC
+    dLdRawForgetR = dLdForgetR * sigmoidDeriv ncForgetRPre  -- dLdrawFr = dLdfr * sigmoidDeriv ncForgetRPre
 
-    dLdCellCand = dLdnewC * ncInpGate
-    dRawCell = dLdCellCand * tanhDeriv ncCellCandPre
+    dLdCellCand = dLdnewC * ncInpGate                       -- dLdcc = dLdc * ncInpGate
+    dLdRawCell = dLdCellCand * tanhDeriv ncCellCandPre      -- dLdrawC = dLdcc * tanhDeriv ncCellCandPre
 
-    dEmbLSTM = tr' lstmInpW #> dRawInp
-             + tr' lstmOutW #> dRawOut
-             + tr' lstmCellW #> dRawCell
-             + tr' lstmForgetLW #> dRawForgetL
-             + tr' lstmForgetRW #> dRawForgetR
+    dLdProjFeat = tr' inpW #> dLdRawInp                     -- inpW #> projFeat
+                + tr' outW #> dLdRawOut                     -- outW #> projFeat
+                + tr' cellCandW #> dLdRawCell               -- cellCandW #> projFeat
+                + tr' forgetW #> dLdRawForgetL              -- forgetW #> projFeat
+                + tr' forgetW #> dLdRawForgetR              -- forgetW #> projFeat
 
-    dProjFeat = tr' embWeight #> dEmbLSTM
+    dLdhL = tr' inpLW #> dLdRawInp
+          + tr' forgetLW #> dLdRawForgetL
+          + tr' forgetLW #> dLdRawForgetR
+          + tr' outLW #> dLdRawOut
+          + tr' cellCandLW #> dLdRawCell
 
-    dLdhL = tr' lstmForgetLW #> dRawForgetL
-    dLdcL = dLdnewC * ncForgetLG
-    dLdhR = tr' lstmForgetRW #> dRawForgetR
-    dLdcR = dLdnewC * ncForgetRG
 
-    hidDim = LA.size ncEmbOut
-    projDim = LA.size dProjFeat
+
+    dLdcL = dLdnewC * ncForgetLG                            -- dLdcL = dLdnewC * dnewCdcL = dLdnewC * ncForgetLG
+
+    dLdhR = tr' inpRW #> dLdRawInp
+          + tr' forgetRW #> dLdRawForgetL
+          + tr' forgetRW #> dLdRawForgetR
+          + tr' outRW #> dLdRawOut
+          + tr' cellCandRW #> dLdRawCell
+
+    dLdcR = dLdnewC * ncForgetRG                            -- dLdcR = dLdnewC * dnewCdcR = dLdnewC * ncForgetRG
+
+    hidDim = LA.size ncInpGate
+    projDim = LA.size dLdProjFeat
     leafRawDim = snd $ LA.size leafProjW
     nonLeafRawDim = snd $ LA.size nonLeafProjW
     zeroG = zeroGrad leafRawDim nonLeafRawDim projDim hidDim
 
-    (projGrad, dRawFeat)
+    (projGrad, dLdRawFeat)
       | ncIsLeaf =
-          let gW = outer dProjFeat ncFeat
-              gB = dProjFeat
-              dX = tr' leafProjW #> dProjFeat
+          let gW = outer dLdProjFeat ncFeat
+              gB = dLdProjFeat
+              dX = tr' leafProjW #> dLdProjFeat
               pg = zeroG { leafProjW = gW, leafProjB = gB }
           in (pg, dX)
       | otherwise =
-          let gW = outer dProjFeat ncFeat
-              gB = dProjFeat
-              dX = tr' nonLeafProjW #> dProjFeat
+          let gW = outer dLdProjFeat ncFeat
+              gB = dLdProjFeat
+              dX = tr' nonLeafProjW #> dLdProjFeat
               pg = zeroG { nonLeafProjW = gW, nonLeafProjB = gB }
           in (pg, dX)
 
-    gradEmbW = outer dEmbLSTM ncProjFeat
-    gradEmbB = dEmbLSTM
-    gradIW = outer dRawInp ncEmbOut
-    gradIB = dRawInp
-    gradFWL = outer dRawForgetL ncLeftH
-    gradFBL = dRawForgetL
-    gradFWR = outer dRawForgetR ncRightH
-    gradFBR = dRawForgetR
-    gradOW = outer dRawOut ncEmbOut
-    gradOB = dRawOut
-    gradCW = outer dRawCell ncEmbOut
-    gradCB = dRawCell
+    gradInpW = outer dLdRawInp ncProjFeat
+    gradInpLW = outer dLdRawInp ncLeftH
+    gradInpRW = outer dLdRawInp ncRightH
+    gradInpB = dLdRawInp
+
+    gradForgetW = outer dLdRawForgetL ncProjFeat + outer dLdRawForgetR ncProjFeat
+    gradForgetLW = outer dLdRawForgetL ncLeftH + outer dLdRawForgetR ncLeftH
+    gradForgetRW = outer dLdRawForgetL ncRightH + outer dLdRawForgetR ncRightH
+    gradForgetB = dLdRawForgetL + dLdRawForgetR
+
+    gradOutW = outer dLdRawOut ncProjFeat
+    gradOutLW = outer dLdRawOut ncLeftH
+    gradOutRW = outer dLdRawOut ncRightH
+    gradOutB = dLdRawOut
+
+    gradCellCandW = outer dLdRawCell ncProjFeat
+    gradCellCandLW = outer dLdRawCell ncLeftH
+    gradCellCandRW = outer dLdRawCell ncRightH
+    gradCellCandB = dLdRawCell
 
     lstmGrad = zeroG
-      { embWeight = gradEmbW, embBias = gradEmbB
-      , lstmInpW = gradIW, lstmForgetLW = gradFWL, lstmForgetRW = gradFWR
-      , lstmOutW = gradOW, lstmCellW = gradCW
-      , lstmInpB = gradIB, lstmForgetLB = gradFBL, lstmForgetRB = gradFBR
-      , lstmOutB = gradOB, lstmCellB = gradCB
-      }
+      { inpW = gradInpW, inpLW = gradInpLW, inpRW = gradInpRW, inpB = gradInpB
+      , forgetW = gradForgetW, forgetLW = gradForgetLW, forgetRW = gradForgetRW, forgetB = gradForgetB
+      , outW = gradOutW, outLW = gradOutLW, outRW = gradOutRW, outB = gradOutB
+      , cellCandW = gradCellCandW, cellCandLW = gradCellCandLW, cellCandRW = gradCellCandRW, cellCandB = gradCellCandB
+
+    }
+
     fullGrad = projGrad `gradAdd` lstmGrad
-  in (fullGrad, dLdhL, dLdcL, dLdhR, dLdcR, dRawFeat)
+  in (fullGrad, dLdhL, dLdcL, dLdhR, dLdcR, dLdRawFeat)
 
 -- ===================== 整树反向传播【修复空树梯度】 =====================
+-- 对一棵句法树调用本函数，输入dLdh和dLdc，递归执行，直到求出整棵树的梯度和。
 backwardTree :: NetParam -> SyntaxTree NodeCache -> Vector Double -> Vector Double -> NetGrad
 backwardTree param EmptySTree _ _ =
   let
     leafRawDim = snd $ LA.size (leafProjW param)
     nonLeafRawDim = snd $ LA.size (nonLeafProjW param)
     projDim = fst $ LA.size (leafProjW param)
-    hidDim = fst $ LA.size (embWeight param)
+    hidDim = fst $ LA.size (inpW param)
   in zeroGrad leafRawDim nonLeafRawDim projDim hidDim
 backwardTree param (STreeNode cache leftTree rightTree _) dLdh dLdc =
   let
@@ -587,28 +647,21 @@ sampleForwardLossGrad param ((ltree, rtree), action) =
     pred = softmax logits
     label = actionToOneHot action
     loss = crossEntropy pred label
-    dLogit = pred - label
-    gradClsW = outer dLogit concatH
-    gradClsB = dLogit
+    dLdLogit = pred - label                   -- dLdz
+    gradClsW = outer dLdLogit concatH
+    gradClsB = dLdLogit
     hidDim = LA.size hl
-    dConcatH = tr' clsWeight #> dLogit
-    dHl = subVector 0 hidDim dConcatH
-    dHr = subVector hidDim (LA.size dConcatH - hidDim) dConcatH
-    gradL = backwardTree param (tfCacheTree lFwd) dHl (konst 0.0 hidDim)
-    gradR = backwardTree param (tfCacheTree rFwd) dHr (konst 0.0 hidDim)
+    dLdConcatH = tr' clsWeight #> dLdLogit
+    dLdHl = subVector 0 hidDim dLdConcatH
+    dLdHr = subVector hidDim (LA.size dLdConcatH - hidDim) dLdConcatH
+    gradL = backwardTree param (tfCacheTree lFwd) dLdHl (konst 0.0 hidDim)           -- 这里, dLdCl 是零向量，合适吗？
+    gradR = backwardTree param (tfCacheTree rFwd) dLdHr (konst 0.0 hidDim)           -- 这里，dLdCr 是零向量，合适吗？
     totalGrad0 = gradL `gradAdd` gradR
     totalGrad = totalGrad0
       { clsWeight = gradClsW
       , clsBias = gradClsB
       }
   in (loss, totalGrad)
-
-trainStep :: NetParam -> TrainSample -> Double -> (Double, NetParam)
-trainStep param sample lr =
-  let (loss, grad) = sampleForwardLossGrad param sample
-      clippedGrad = clipGrad 5.0 grad
-      newParam = updateParam lr clippedGrad param
-  in (loss, newParam)
 
 batchTrainStep :: NetParam -> [TrainSample] -> Double -> (Double, NetParam)
 batchTrainStep param samples lr =
@@ -637,6 +690,7 @@ mkLeaf wordEmb catEmb =
   in STreeNode feat EmptySTree EmptySTree True
 
 mkNonLeaf :: [Double] -> [Double] -> [Double] -> RawSyntaxTree -> RawSyntaxTree -> RawSyntaxTree
+mkNonLeaf _ _ _ EmptySTree EmptySTree = error "mkNonLeaf: Parameter error."
 mkNonLeaf cat tag phra l r =
   let feat = LA.fromList (cat ++ tag ++ phra)
   in STreeNode feat l r False
@@ -673,8 +727,7 @@ testPipeline = do
     leafB = mkLeaf [0.4,0.2] [0.1,0.7]
     treeL = mkNonLeaf [0.3,0.6] [0.2,0.4] [0.1,0.9] leafA EmptySTree
     treeR = mkNonLeaf [0.7,0.2] [0.5,0.1] [0.3,0.4] EmptySTree leafB
-    testSampleSet = [ ((treeL, treeR), Rp) ]
-  samples <- pure testSampleSet
+    samples = [ ((treeL, treeR), Rp) ]
   putStrLn $ "样本数量：" ++ show (length samples)
   trainedP <- trainLoop initP samples lr epochs
   let ((testL,testR), trueAct) = head samples
@@ -735,9 +788,10 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat :: BiTree (PhraSyn0, Term)
                                      -> Int
                                      -> Int
                                      -> Int
+                                     -> [Double]
                                      -> IO (SyntaxTree NodeFeat)
-biTreePhraSyn0Seman2SyntaxTreeNodeFeat Empty _ _ _ _ _ _ = return EmptySTree
-biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru = do
+biTreePhraSyn0Seman2SyntaxTreeNodeFeat Empty _ _ _ _ _ _ _ = return EmptySTree
+biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov = do
     let
         (v1, g1) = randVec dim_cate (mkStdGen 42)
         (v2, g2) = randVec dim_tag g1
@@ -763,10 +817,12 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVe
         (defs, is) <- query conn sqlstat [MySQLText (T.pack seman)]       -- Search database table 'wordEmbTbl'
         rows <- S.toList is
 --        putStrLn $ "  Size of rows: " ++ show (length rows)
+        close conn
         if rows == []                      -- OOV
           then do
-            (defs, is) <- query conn sqlstat [toMySQLText "<OOV>"]
+{-            (defs, is) <- query conn sqlstat [toMySQLText "<OOV>"]
             rows' <- S.toList is
+            close conn
             if rows' == []                 -- [[MySQLValue]]
               then error "biTreePhraSyn0Seman2SyntaxTreeNodeFeat: OOV is NOT in 'wordEmbTbl'."
               else do                      -- rows' = [[MySQLBytes]]
@@ -777,6 +833,12 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVe
                                  , stRight = EmptySTree
                                  , stIsLeaf = True
                                  }
+ -}
+            return STreeNode { nodeData = LA.vjoin [cateVec, LA.fromList oov]
+                             , stLeft = EmptySTree
+                             , stRight = EmptySTree
+                             , stIsLeaf = True
+                             }
           else do                         -- Not OOV
             let embVec = (fromMaybe' . fromMySQLJSON) ((rows!!0)!!0)     -- [Double]
 --            putStrLn $ "  embVec(" ++ seman ++ "): " ++ show embVec
@@ -787,8 +849,9 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVe
                              }
       else do           -- Phrasal seman
 --        putStrLn $ "  It's a compound term."
-        lt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat lt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru
-        rt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat rt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru
+        lt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat lt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov
+        rt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat rt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov
+        close conn
         return STreeNode { nodeData = LA.vjoin [cateVec, tagVec, struVec]
                          , stLeft = lt
                          , stRight = rt
@@ -825,7 +888,7 @@ buildSampleSet dim_cate dim_tag dim_stru = do
                                          )
                                   ) textTextTextTextTextList
 
-  putStrLn $ "lotLosRotRosPriorList: " ++ show lotLosRotRosPriorList
+--  putStrLn $ "lotLosRotRosPriorList: " ++ show lotLosRotRosPriorList
   let loRoPriorList = map (\x -> (( mergeBiTree (fst5 x) (snd5 x)                -- BiTree (PhraSyn0, Term)
                                   , mergeBiTree (thd5 x) (fth5 x)
                                   )
@@ -838,27 +901,24 @@ buildSampleSet dim_cate dim_tag dim_stru = do
   tagVecMap <- tag2Vec                           -- Map Tag (Vector Double)
   struVecMap <- stru2Vec                         -- Map PhraStru (Vector Double)
 
-  sampleSet <- mapM (\x -> do
-                            lt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat ((fst . fst) x) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru
-                            rt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat ((snd . fst) x) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru
+  sampleSet <- mapWithProgressStep 100
+                  (\x -> do
+                            lt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat ((fst . fst) x) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov300
+                            rt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat ((snd . fst) x) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov300
                             let prior = snd x
                             return SampleRecord{ recLeftTree = lt
                                                , recRightTree = rt
                                                , recTargetAct = prior
                                                }
-                     ) loRoPriorList
-  putStrLn $ "buildSampleSet: sampleSet!!0: " ++ show (sampleSet!!0)
+                  ) loRoPriorList
+
+--  putStrLn $ "buildSampleSet: sampleSet!!0: " ++ show (sampleSet!!0)
   return sampleSet
 
 -- 评估整个数据集上模型预测的平均损失率
 evalLoss :: NetParam -> [TrainSample] -> Double
 evalLoss param samples = avgLoss
   where
-    leafD = snd $ LA.size $ leafProjW param
-    nonLeafD = snd $ LA.size $ nonLeafProjW param
-    projD = netProjDim param
-    hidD = netHidDim param
-    initG = zeroGrad leafD nonLeafD projD hidD
     pairs = map (sampleForwardLossGrad param) samples
     losses = map fst pairs
     totalLoss = sum losses
@@ -866,41 +926,57 @@ evalLoss param samples = avgLoss
     avgLoss = totalLoss / sampleSetSize
 
 -- ========== 【trainLoop2：支持验证 + 早停 + 保存最优参数】 ==========
--- 入参：初始参数、训练集、验证集、学习率、最大轮数、早停耐心值
+-- 入参：初始参数、训练集、验证集、学习率、最大轮数、早停耐心值、批大小
 -- 返回：验证集上最优模型参数
-trainLoop2 :: NetParam -> [TrainSample] -> [TrainSample] -> Double -> Int -> Int -> IO NetParam
-trainLoop2 initParam trainSet valSet lr maxEpoch patience = go initParam maxEpoch patience 1 1e9
+trainLoop2 :: NetParam -> [TrainSample] -> [TrainSample] -> Double -> Int -> Int -> Int -> IO NetParam
+trainLoop2 initParam trainSet valSet lr maxEpoch patience batchSize = go initParam maxEpoch patience 1 1e9 batchSize
   where
-    go :: NetParam -> Int -> Int -> Int -> Double -> IO NetParam
-    go bestParam remainEpoch remainPatience epoch bestValLoss
+    go :: NetParam -> Int -> Int -> Int -> Double -> Int -> IO NetParam
+    go currParam remainEpoch remainPatience epoch currValLoss batchSize
       | remainEpoch <= 0 = do
           putStrLn $ "达到最大 Epoch(" ++ show maxEpoch ++ ")，停止训练，返回最优模型"
-          return bestParam
+          return currParam
       | remainPatience <= 0 = do
           putStrLn $ "早停触发！连续 " ++ show patience ++ " 轮验证损失无下降，终止训练"
-          return bestParam
+          return currParam
       | otherwise = do
-          putStrLn $ "\n==== Epoch " ++ show epoch ++ " ===="
           -- 1. 完整一轮训练：遍历训练集更新参数
-          currParam <- trainOneEpoch initParam trainSet lr
+          newParam <- trainOneEpoch currParam trainSet lr batchSize
           -- 2. 在验证集评估
-          let valLoss = evalLoss currParam valSet
-          putStrLn $ "Epoch " ++ show epoch ++ " | 验证集平均损失: " ++ show valLoss
+          let newValLoss = evalLoss newParam valSet
+          putStr $ "Epoch " ++ show epoch ++ " | 验证集平均损失: " ++ show newValLoss
+
+          confInfo <- readFile "Configuration"
+          let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+              dim_proj = getConfProperty "dim_proj" confInfo
+              lr_str = show $ floor (lr * 1000)
+              lossColName = "loss_" ++ "dim" ++ dim_proj ++ "_lr" ++ lr_str ++ "_batch" ++ show batchSize
+              tblName = syntax_ambig_resol_model ++ "_train_" ++ "dim" ++ dim_proj ++ "_lr" ++ lr_str ++ "_batch" ++ show batchSize
+              sqlstat = DS.fromString $ "INSERT INTO " ++ tblName ++ " set epoch = ?, " ++ lossColName ++ " = ?"
+          conn <- getConn
+          stmt <- prepareStmt conn sqlstat
+          executeStmt conn stmt [toMySQLInt32U epoch, toMySQLDouble newValLoss]
+          closeStmt conn stmt
+          close conn
+
           -- 3. 判断是否更新最优模型
-          if valLoss < bestValLoss
+          if newValLoss < currValLoss
             then do
-              putStrLn $ "验证损失下降，更新最优模型，新最优损失: " ++ show valLoss
-              go currParam (remainEpoch - 1) patience (epoch + 1) valLoss
+              putStrLn $ " | 验证损失下降，更新最优模型。"
+              go newParam (remainEpoch - 1) patience (epoch + 1) newValLoss batchSize
             else do
-              putStrLn $ "验证损失未下降，剩余耐心: " ++ show (remainPatience - 1)
-              go bestParam (remainEpoch - 1) (remainPatience - 1) (epoch + 1) bestValLoss
+              putStrLn $ " | 验证损失未下降，剩余耐心: " ++ show (remainPatience - 1)
+              go currParam (remainEpoch - 1) (remainPatience - 1) (epoch + 1) currValLoss batchSize
 
 -- 单轮训练：遍历trainSet，反向传播更新权重
-trainOneEpoch :: NetParam -> [TrainSample] -> Double -> IO NetParam
-trainOneEpoch param samples lr = do
+trainOneEpoch :: NetParam -> [TrainSample] -> Double -> Int -> IO NetParam
+trainOneEpoch param samples lr batchSize = do
   gen <- mkStdGen <$> randomRIO (1,99999)
-  let shuffled = shuffle_ samples gen
-      (_, newParam) = batchTrainStep param shuffled lr
+  let shuffled = shuffle_ samples gen                                           -- [TrainSample]
+      batches = chunk batchSize shuffled                                        -- [[TrainSample]]
+      (_, newParam) =
+        foldl' (\(_,p) b -> let (loss,p') = batchTrainStep p b lr in (loss,p')) (0.0, param) batches
+                                                                                -- Initial loss is set 0.0
   return newParam
 
 --- ===================== 训练与测试：可独立运行 =====================
@@ -910,8 +986,11 @@ testPipeline2 = do
   confInfo <- readFile "Configuration"
   let
     syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
-    syntax_resol_sample_startId_str = getConfProperty "syntax_resol_sample_startId" confInfo
-    syntax_resol_sample_endId_str = getConfProperty "syntax_resol_sample_endId" confInfo
+    syntax_resol_sample_startId = getConfProperty "syntax_resol_sample_startId" confInfo
+    syntax_resol_sample_endId = getConfProperty "syntax_resol_sample_endId" confInfo
+    startId = read syntax_resol_sample_startId :: Int
+    endId = read syntax_resol_sample_endId :: Int
+
     dim_word_str = getConfProperty "dim_word" confInfo
     dim_cate_str = getConfProperty "dim_cate" confInfo
     dim_tag_str = getConfProperty "dim_tag" confInfo
@@ -921,6 +1000,7 @@ testPipeline2 = do
     lr_str = getConfProperty "lr" confInfo
     epochs_str = getConfProperty "epochs" confInfo
     earlyStopPatience_str = getConfProperty "earlyStopPatience" confInfo
+    batchSize_str = getConfProperty "batchSize" confInfo
 
     dim_word = read dim_word_str :: Int
     dim_cate = read dim_cate_str :: Int
@@ -931,13 +1011,14 @@ testPipeline2 = do
     lr = read lr_str :: Double
     epochs = read epochs_str :: Int
     earlyStopPatience = read earlyStopPatience_str :: Int
+    batchSize = read batchSize_str :: Int
 
     leafRawDim    = dim_word + dim_cate
     nonLeafRawDim = dim_cate + dim_tag + dim_stru
 
   putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
-  putStrLn $ " syntax_resol_sample_startId: " ++ syntax_resol_sample_startId_str
-  putStrLn $ " syntax_resol_sample_endId: " ++ syntax_resol_sample_endId_str
+  putStrLn $ " syntax_resol_sample_startId: " ++ syntax_resol_sample_startId
+  putStrLn $ " syntax_resol_sample_endId: " ++ syntax_resol_sample_endId
   putStrLn $ " dim_word: " ++ dim_word_str
   putStrLn $ " dim_cate: " ++ dim_cate_str
   putStrLn $ " dim_tag: " ++ dim_tag_str
@@ -947,69 +1028,81 @@ testPipeline2 = do
   putStrLn $ " lr: " ++ lr_str
   putStrLn $ " epochs: " ++ epochs_str
   putStrLn $ " earlyStopPatience: " ++ earlyStopPatience_str
+  putStrLn $ " batchSize: " ++ batchSize_str
 
   let prompt = " Test the building of sample set in Module BiTreeLSTM, are you sure? [y/n] (RETURN for 'y'): "
   answer <- getLineUntil prompt ["y","n"] True
   if answer == "y"
     then do
-      initP <- initNetParam leafRawDim nonLeafRawDim projDim hidDim
-      samples0 <- buildSampleSet dim_cate dim_tag dim_stru
-      let samples = map (\x -> ((recLeftTree x, recRightTree x), recTargetAct x)) samples0
-      putStrLn $ "总样本数量：" ++ show (length samples)
+      -- ========== 清空存储训练过程损失率的 MySQL 表 ==========
+      let
+          lr_str = show $ floor (lr * 1000)
+          lossColName = "loss_" ++ "dim" ++ dim_proj_str ++ "_lr" ++ lr_str ++ "_batch" ++ batchSize_str
+          tblName = syntax_ambig_resol_model ++ "_train_" ++ "dim" ++ dim_proj_str ++ "_lr" ++ lr_str ++ "_batch" ++ batchSize_str
+          sqlstat1 = DS.fromString $ "SELECT EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA='ccg4c' AND TABLE_NAME='"
+                                     ++ tblName ++ "') AS table_exist"
+      conn <- getConn
+      stmt <- prepareStmt conn sqlstat1
+      (defs, is) <- queryStmt conn stmt []
+      rows <- readStreamByInt32U [] is
+      case length rows of
+        0 -> do
+               closeStmt conn stmt
+               close conn
+               error $ "MySQL table " ++ tblName ++ " does NOT exist."
+        x | x > 1 -> do
+               closeStmt conn stmt
+               close conn
+               error $ "Impossible"
+        1 -> do
+               let sqlstat2 = DS.fromString $ "DELETE FROM " ++ tblName
+               stmt <- prepareStmt conn sqlstat2
+               executeStmt conn stmt []
+               closeStmt conn stmt
+               close conn
 
-      -- ========== 8:1:1 数据集划分 ==========
-      gen <- newStdGen
-      let shuffledSamples = shuffle_ samples gen
-          total = length shuffledSamples
-          splitTrain  = floor $ 0.8 * fromIntegral total
-          splitVal    = floor $ 0.9 * fromIntegral total
-          (trainSet, rest) = splitAt splitTrain shuffledSamples
-          (valSet, testSet) = splitAt (splitVal - splitTrain) rest
-      putStrLn $ "训练集(80%)样本数：" ++ show (length trainSet)
-      putStrLn $ "验证集(10%)样本数：" ++ show (length valSet)
-      putStrLn $ "测试集(10%)样本数：" ++ show (length testSet)
+               initP <- initNetParam leafRawDim nonLeafRawDim projDim hidDim
+               samples0 <- buildSampleSet dim_cate dim_tag dim_stru
+               let samples = map (\x -> ((recLeftTree x, recRightTree x), recTargetAct x)) samples0
+               putStrLn $ "总样本数量：" ++ show (length samples)
 
-      -- ========== 带验证+早停训练，返回验证最优模型 ==========
-      bestTrainedP <- trainLoop2 initP trainSet valSet lr epochs earlyStopPatience
+               -- ========== 8:1:1 数据集划分 ==========
+               gen <- newStdGen
+               let shuffledSamples = shuffle_ samples gen
+                   total = length shuffledSamples
+                   splitTrain  = floor $ 0.8 * fromIntegral total
+                   splitVal    = floor $ 0.9 * fromIntegral total
+                   (trainSet, rest) = splitAt splitTrain shuffledSamples
+                   (valSet, testSet) = splitAt (splitVal - splitTrain) rest
+               putStrLn $ "训练集(80%)样本数：" ++ show (length trainSet)
+               putStrLn $ "验证集(10%)样本数：" ++ show (length valSet)
+               putStrLn $ "测试集(10%)样本数：" ++ show (length testSet)
 
-      -- ========== 【最终评估：独立测试集，仅执行一次】 ==========
-      putStrLn "\n====【最终测试集评估】===="
-      case testSet of
-        [] -> putStrLn "警告：测试集为空，无法评估！"
-        (firstSample:_) -> do
-          -- 1. 取第一条做可视化展示（原有逻辑保留）
-          let ((testL,testR), trueAct) = firstSample
-              lFwd = treeForwardCached bestTrainedP testL
-              rFwd = treeForwardCached bestTrainedP testR
-              LSTMState hl _ = tfRootState lFwd
-              LSTMState hr _ = tfRootState rFwd
-              concatH = LA.vjoin [hl,hr]
-              logits = clsWeight bestTrainedP #> concatH + clsBias bestTrainedP
-              pred = softmax logits
-              predAct = vecToAction pred
-          putStrLn "\n====【测试集第一条样例预测展示】===="
-          putStrLn $ "预测分布:" ++ show pred
-          putStrLn $ "预测动作:" ++ show predAct
-          putStrLn $ "真实动作:" ++ show trueAct
+               -- ========== 带验证+早停训练，返回验证最优模型 ==========
+               bestTrainedP <- trainLoop2 initP trainSet valSet lr epochs earlyStopPatience batchSize
 
-          -- 2. 遍历全部测试集，计算整体指标（正式评估）
-          let totalLoss = evalLoss bestTrainedP testSet
-              predPairs = map (\s -> let ((l,r),t) = s
-                                         fL = treeForwardCached bestTrainedP l
-                                         fR = treeForwardCached bestTrainedP r
-                                         LSTMState hL _ = tfRootState fL
-                                         LSTMState hR _ = tfRootState fR
-                                         concatH = LA.vjoin [hL,hR]
-                                         log = clsWeight bestTrainedP #> concatH + clsBias bestTrainedP
-                                         pAct = vecToAction (softmax log)
-                                     in (pAct, t)
-                              ) testSet
-              correct = length $ filter (\(p,t) -> p == t) predPairs
-              total = length testSet
-              acc = fromIntegral correct / fromIntegral total :: Double
-          putStrLn "\n====【完整测试集正式评估结果】===="
-          putStrLn $ "测试集平均损失：" ++ show totalLoss
-          putStrLn $ "正确样本数：" ++ show correct ++ " / " ++ show total
-          putStrLn $ "测试集准确率：" ++ show acc
+               -- ========== 【最终评估：独立测试集，仅执行一次】 ==========
+               putStrLn "\n====【最终测试集评估】===="
+               case testSet of
+                 [] -> putStrLn "警告：测试集为空，无法评估！"
+                 _ -> do
+                   let totalLoss = evalLoss bestTrainedP testSet
+                       predPairs = map (\s -> let ((l,r),t) = s
+                                                  fL = treeForwardCached bestTrainedP l
+                                                  fR = treeForwardCached bestTrainedP r
+                                                  LSTMState hL _ = tfRootState fL
+                                                  LSTMState hR _ = tfRootState fR
+                                                  concatH = LA.vjoin [hL,hR]
+                                                  log = clsWeight bestTrainedP #> concatH + clsBias bestTrainedP
+                                                  pAct = vecToAction (softmax log)
+                                              in (pAct, t)
+                                       ) testSet
+                       correct = length $ filter (\(p,t) -> p == t) predPairs
+                       total = length testSet
+                       acc = fromIntegral correct / fromIntegral total :: Double
+                   putStrLn "\n====【完整测试集正式评估结果】===="
+                   putStrLn $ "测试集平均损失：" ++ show totalLoss
+                   putStrLn $ "正确样本数：" ++ show correct ++ " / " ++ show total
+                   putStrLn $ "测试集准确率：" ++ show acc
 
     else putStrLn "Cancelled."

@@ -112,6 +112,7 @@ module Utils (
     nodePairsBetwTwOBiTree,   -- BiTree a -> BiTree a -> [(a,a)]
     stringToBiTree,     -- (String -> a) -> String -> BiTree a
     mergeBiTree,        -- BiTree a -> BiTree b -> BiTree (a,b)
+    isIsomorphic,       -- BiTree a -> BiTree b -> Bool
     forest2BiTree,      -- [BiTree a] -> BiTree a
     jaccardSimIndex,    -- Eq a => [a] -> [a] -> Double
     jaccardSimIndex',   -- Eq a => [[a]] -> Double
@@ -123,6 +124,7 @@ module Utils (
     testSimToEmbedding, -- IO ()
     upperTriList2SymMat,      -- Int -> [Double] -> Matrix Double
     compEucDist,        -- Matrix Double -> Int -> [Double]
+    mapWithProgressStep,      -- Int -> (a -> IO b) -> [a] -> IO [b]
     ) where
 
 import Data.Tuple
@@ -136,6 +138,7 @@ import Data.Function (on)
 import qualified Numeric.LinearAlgebra as LA
 import Numeric.LinearAlgebra
 import Numeric.LinearAlgebra.Data
+import Control.Monad (when)
 
 -- Functions on four tuple.
 
@@ -937,6 +940,14 @@ mergeBiTree Empty Empty = Empty
 mergeBiTree (Node a al ar) (Node b bl br) = Node (a,b) (mergeBiTree al bl) (mergeBiTree ar br)
 mergeBiTree t1 t2 = error $ "mergeBiTree: Not isomorphic: t1 = " ++ show t1 ++ ", t2 = " ++ show t2
 
+{- Decide tow binary trees are isomorphic or not.
+ -}
+isIsomorphic :: BiTree a -> BiTree b -> Bool
+isIsomorphic Empty Empty = True
+isIsomorphic Empty _ = False
+isIsomorphic _ Empty = False
+isIsomorphic (Node a al ar) (Node b bl br) = isIsomorphic al bl && isIsomorphic ar br
+
 {- Create a binary tree from a forest of binary trees.
  - Binary trees for Categorial Grammar are those not including 1-degree nodes, so left-child right-sibling algorithm is used.
  -}
@@ -1084,3 +1095,13 @@ compEucDist mat rowIdx = distList
     vs = toRows mat                  -- [Vector Double]
     v = vs!!rowIdx                   -- Vector Double
     distList = map (\vx -> norm_2 (v - vx)) vs        -- [Double]
+
+mapWithProgressStep :: Int -> (a -> IO b) -> [a] -> IO [b]
+mapWithProgressStep step f xs = mapM go (zip [1..] xs)
+  where
+    total = length xs
+    go (idx, x) = do
+      res <- f x
+      when (idx `mod` step == 0 || idx == total) $
+        putStrLn $ "进度: " ++ show idx ++ " / " ++ show total
+      return res

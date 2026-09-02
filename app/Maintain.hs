@@ -23,6 +23,7 @@ module Maintain (
     createSemanCombForEveryClau,              -- IO ()
     createSemanContextForEveryWord,           -- IO ()
     createIntersionJuxtapositionForEveryClau, -- IO ()
+    checkIsomorphicBetwSynTreeAndSynSemTree,  -- IO ()
     ) where
 
 import Control.Monad
@@ -41,6 +42,7 @@ import Corpus
 import Category
 import Phrase
 import CL
+import Rule
 import Utils
 
 {- Set attribue 'ipc' of certain rows as an user of this software. In table corpus,
@@ -596,3 +598,42 @@ createIntersionJuxtapositionForEveryClau = do
 
             close conn                       -- Close the connection.
           else putStrLn "Command was cancelled."
+
+{- Check syntactic tree and syntax-semantic tree are isomorphic or not.
+ - tblName: Name of MySQL table
+ - synTree: Field of syntactic trees
+ - synSemTree: Field of syntax-semantic trees
+ - If syntactic tree and syntax-semantic tree are not isomorphic, return the corresponding value of 'id'.
+ - Suppose nodes in syntactic tree be defined as PhraSyn0.
+ -}
+checkIsomorphicBetwSynTreeAndSynSemTree :: IO ()
+checkIsomorphicBetwSynTreeAndSynSemTree = do
+    confInfo <- readFile "Configuration"
+    let tblName = getConfProperty "syntax_ambig_resol_model" confInfo
+        syntax_resol_sample_startId = getConfProperty "syntax_resol_sample_startId" confInfo
+        syntax_resol_sample_endId = getConfProperty "syntax_resol_sample_endId" confInfo
+        startId = read syntax_resol_sample_startId :: Int
+        endId = read syntax_resol_sample_endId :: Int
+    putStrLn $ "  syntax_ambig_resol_model: " ++ tblName
+    putStrLn $ "  startId: " ++ syntax_resol_sample_startId
+    putStrLn $ "  endId: " ++ syntax_resol_sample_endId
+
+    putStr "Please input Field name of syntactic tree: "
+    synTreeName <- getLine
+    putStr "Please input Field name of syntax-semantic tree: "
+    synSemTreeName <- getLine
+
+    conn <- getConn
+    let sqlstat = DS.fromString $ "select id, " ++ synTreeName ++ ", " ++ synSemTreeName ++ " from " ++ tblName ++ " where id >= ? && id <= ?"
+    stmt <- prepareStmt conn sqlstat
+    (_, is) <- queryStmt conn stmt [toMySQLInt32U startId, toMySQLInt32U endId]
+    rows <- readStreamByInt32UTextText [] is                             -- [(id, synTreeStr, synSemTreeStr)]
+    let id2TreePairList = map (\row -> ( fst row
+                                       , ( stringToBiTree getPhraSyn0FromStr ((fst . snd) row)
+                                         , (biTreeEqualsWithTerm . getTermFromStr . seman2SynSeman) ((snd . snd) row)
+                                         )
+                                       )
+                              ) rows
+        id2TreePairNotIsomorphicList = filter (\row -> not (isIsomorphic ((fst . snd) row) ((snd . snd) row))) id2TreePairList
+    putStrLn $ show (length id2TreePairNotIsomorphicList) ++ " pairs of syntax trees and syntax-semantic trees are NOT isomorphic."
+    putStrLn $ "  They are: " ++ show id2TreePairNotIsomorphicList
