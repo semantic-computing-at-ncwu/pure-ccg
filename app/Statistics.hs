@@ -2163,7 +2163,7 @@ cate2Vec = do
                           "phrasyn0" -> getTypePair2SimFromSCPL0 sentClauPhraList
                           _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
         typePair2SimList = fth4 typePair2SimTuple             -- [((Category, Category), SimDeg)]
-        typeNum = snd4 typePair2SimTuple
+        typeNum = snd4 typePair2SimTuple                      -- NumOfCate
         typeList = map (snd . fst) $ take typeNum typePair2SimList              -- [Category]
         upperTriangularSimDegList = map snd typePair2SimList                    -- [SimDeg]
         embMat = normalizeRows $ simToEmbedding $ upperTriList2SymMat typeNum upperTriangularSimDegList       -- Matrix SimDeg
@@ -2201,11 +2201,12 @@ tag2Vec = do
                           "phrasyn0" -> getTagPair2SimFromSCPL0 sentClauPhraList
                           _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
         tagPair2SimList = fth4 tagPair2SimTuple               -- [((Tag, Tag), SimDeg)]
-        tagNum = snd4 tagPair2SimTuple
+        tagNum = snd4 tagPair2SimTuple                        -- NumOfTag
         tagList = map (snd . fst) $ take tagNum tagPair2SimList              -- [Tag]
         upperTriangularSimDegList = map snd tagPair2SimList                  -- [SimDeg]
         embMat = normalizeRows $ simToEmbedding $ upperTriList2SymMat tagNum upperTriangularSimDegList       -- Matrix SimDeg
-    return (Map.fromList (zip tagList (toRows embMat)))
+        tagVecMap = Map.fromList (zip tagList (toRows embMat))               -- Map Tag [Double]
+    return tagVecMap
 
 {- Get phrase-structure embedding from similarities between phrasal structures, and embedding dimension is determined by number of different phrasal structures.
  -}
@@ -2236,10 +2237,10 @@ stru2Vec = do
 
         struPair2SimTuple = case phrasyn_model of
                           "phrasyn" -> getStruPair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfStru, NumOfStruPair, [((PhraStru, PhraStru), SimDeg)])
-                          "phrasyn0" -> getTagPair2SimFromSCPL0 sentClauPhraList
+                          "phrasyn0" -> getStruPair2SimFromSCPL0 sentClauPhraList
                           _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
         struPair2SimList = fth4 struPair2SimTuple             -- [((PhraStru, PhraStru), SimDeg)]
-        struNum = snd4 struPair2SimTuple
+        struNum = snd4 struPair2SimTuple                      -- NumOfPhraStru
         struList = map (snd . fst) $ take struNum struPair2SimList           -- [PhraStru]
         upperTriangularSimDegList = map snd struPair2SimList                 -- [SimDeg]
         embMat = normalizeRows $ simToEmbedding $ upperTriList2SymMat struNum upperTriangularSimDegList       -- Matrix SimDeg

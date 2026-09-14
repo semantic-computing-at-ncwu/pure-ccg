@@ -1252,25 +1252,38 @@ doTestCate2Vec username = do
     answer <- getLineUntil prompt ["y","n"] True
     if answer == "y"
       then do
-        embMat <- cate2Vec
-        let npVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup npCate embMat
+        cateVecMap <- cate2Vec            -- Map Category (Vector Double)
+        let npVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup npCate cateVecMap
         putStrLn $ "Embedding vector of category 'np': " ++ listToString (map (printf "%.4f" :: Double -> String) npVec)
       else putStr ""
 
 {- B.D Test the function tag2Vec in Module Statistics.
+ - 'Desig' has no embedding vector, because no similarity between 'Desig' and every other Tag value exists.
  -}
 doTestTag2Vec :: String -> IO ()
 doTestTag2Vec username = do
-    let prompt = " Lookup '>' in embedding matrix returned from 'tag2Vec', are you sure? [y/n] (RETURN for 'y'): "
+    let prompt = " Lookup grammatic tags in embedding matrix returned from 'tag2Vec', are you sure? [y/n] (RETURN for 'y'): "
     answer <- getLineUntil prompt ["y","n"] True
     if answer == "y"
       then do
-        embMat <- tag2Vec
-        let appFVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup ">" embMat
-        putStrLn $ "Embedding vector of grammatic rule '>': " ++ listToString (map (printf "%.4f" :: Double -> String) appFVec)
+        tagVecMap <- tag2Vec              -- Map Tag (Vector Double)
+        putStrLn $ "  (Map.toList tagVecMap)!!0: " ++ show ((Map.toList tagVecMap)!!0)
+        let v1 = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "<" tagVecMap
+            v2 = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "<B" tagVecMap
+            v3 = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "A/n->" tagVecMap
+            v4 = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "N/v-<" tagVecMap
+            v5 = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "V/n-O/v->" tagVecMap
+            desigVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "Desig" tagVecMap
+        putStrLn $ "Embedding vector of grammatic rule '<': " ++ listToString (map (printf "%.4f" :: Double -> String) v1)
+        putStrLn $ "Embedding vector of grammatic rule '<B': " ++ listToString (map (printf "%.4f" :: Double -> String) v2)
+        putStrLn $ "Embedding vector of grammatic rule 'A/n->': " ++ listToString (map (printf "%.4f" :: Double -> String) v3)
+        putStrLn $ "Embedding vector of grammatic rule 'N/v-<': " ++ listToString (map (printf "%.4f" :: Double -> String) v4)
+        putStrLn $ "Embedding vector of grammatic rule 'V/n-O/v->': " ++ listToString (map (printf "%.4f" :: Double -> String) v5)
+        putStrLn $ "Embedding vector of grammatic rule 'desig': " ++ listToString (map (printf "%.4f" :: Double -> String) desigVec)
       else putStr ""
 
 {- B.E Test the function stru2Vec in Module Statistics.
+ - 'DE' has no embedding vector, because no similarity between 'DE' and every other PhraStru value exists.
  -}
 doTestStru2Vec :: String -> IO ()
 doTestStru2Vec username = do
@@ -1278,9 +1291,14 @@ doTestStru2Vec username = do
     answer <- getLineUntil prompt ["y","n"] True
     if answer == "y"
       then do
-        embMat <- stru2Vec
-        let aHnVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "AHn" embMat
+        struVecMap <- stru2Vec            -- Map PhraStru (Vector Double)
+        putStrLn $ "  (Map.toList stru2VecMap)!!0: " ++ show ((Map.toList struVecMap)!!0)
+        let aHnVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "AHn" struVecMap
+            oEVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "OE" struVecMap
+            dEVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup "DE" struVecMap
         putStrLn $ "Embedding vector of phrasal structure 'AHn': " ++ listToString (map (printf "%.4f" :: Double -> String) aHnVec)
+        putStrLn $ "Embedding vector of phrasal structure 'OE': " ++ listToString (map (printf "%.4f" :: Double -> String) oEVec)
+        putStrLn $ "Embedding vector of phrasal structure 'DE': " ++ listToString (map (printf "%.4f" :: Double -> String) dEVec)
       else putStr ""
 
 {- B.F Test the binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM.

@@ -41,6 +41,7 @@ module Utils (
     throwBrac,     -- String -> String
     throwFstBrac,  -- String -> String
     throwLastBrac, -- String -> String
+    throwFstLast,      -- String -> String
     splitAtDeli,   -- Char -> String -> [String]
     splitAtDeliThrowSpace,       -- Char -> String -> [String]
     splitAtDeliAtFP,             -- Char -> String -> [String]
@@ -91,6 +92,7 @@ module Utils (
     ColIdx,        -- Int
     getMatchedElemPair2SimList,   -- (Eq a, Ord b, Num b) => [((RowIdx, ColIdx), ((a, a), b))] -> [((RowIdx, ColIdx), ((a, a), b))] -> [((RowIdx, ColIdx), ((a, a), b))]
     formatDoubleAList,            -- Show a => [(Double, a)] -> Int -> [(String, a)]
+    formatDoubleList,             -- [Double] -> Int -> [String]
     chunk,         -- Int -> [a] -> [[a]]
     indexOfMin',   -- Ord a => [a] -> Maybe Int
     indexOfMax',   -- Ord a => [a] -> Maybe Int
@@ -299,6 +301,10 @@ throwLastBrac 0 cs = cs
 throwLastBrac n cs
     | elem (last cs) ['(',')','[',']'] = throwLastBrac (n-1) (init cs)
     | otherwise = throwLastBrac n (init cs) ++ [last cs]
+
+-- Throw out the first and the last letter in a string.
+throwFstLast :: String -> String
+throwFstLast = tail . init
 
 -- Split a string with designated delimiter.
 splitAtDeli :: Char -> String -> [String]
@@ -791,6 +797,11 @@ getMatchedElemPair2SimList matchedElemPair2SimList elemPair2SimMatrix = getMatch
  -}
 formatDoubleAList :: Show a => [(Double, a)] -> Int -> [(String, a)]       -- 'a' may be any showable type, Polymorphism!
 formatDoubleAList doubleAList n = map (\x -> (printf ("%." ++ show n ++"f") (fst x), snd x)) doubleAList
+
+{- Get the format print of [Double] with given decimal places to represent Double values.
+ -}
+formatDoubleList :: [Double] -> Int -> [String]
+formatDoubleList doubleList n = map (printf ("%." ++ show n ++"f")) doubleList
 
 -- Divide a list into some sublists with same number of elements.
 chunk :: Int -> [a] -> [[a]]

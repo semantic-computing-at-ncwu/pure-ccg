@@ -29,6 +29,7 @@ import Data.Map.Strict as Map hiding (map, foldl, size, filter, splitAt, foldl')
 import System.Random (randomRIO, mkStdGen, randomR, StdGen, newStdGen)
 import List.Shuffle (shuffle_)
 import Data.Maybe (fromMaybe)
+import Text.Printf (printf)
 import Data.List (foldl')
 import Data.Tuple.Utils (fst3, snd3, thd3)
 import Control.Monad (when, foldM)
@@ -161,10 +162,14 @@ data NetParam = NetParam
   , inpLW        :: Matrix Double
   , inpRW        :: Matrix Double
   , inpB         :: Vector Double
-  , forgetW      :: Matrix Double
-  , forgetLW     :: Matrix Double
-  , forgetRW     :: Matrix Double
-  , forgetB      :: Vector Double
+  , forgetLW      :: Matrix Double
+  , forgetLLW     :: Matrix Double
+  , forgetLRW     :: Matrix Double
+  , forgetLB      :: Vector Double
+  , forgetRW      :: Matrix Double
+  , forgetRLW     :: Matrix Double
+  , forgetRRW     :: Matrix Double
+  , forgetRB      :: Vector Double
   , outW         :: Matrix Double
   , outLW        :: Matrix Double
   , outRW        :: Matrix Double
@@ -251,6 +256,10 @@ emptyNodeCache isLeaf featDim projDim hidDim =
    , ncIsLeaf = isLeaf
    }
 
+getRootCache :: SyntaxTree NodeCache -> NodeCache
+getRootCache (STreeNode c _ _ _) = c
+getRootCache EmptySTree = error "getRootCache: empty tree has no cache"
+
 -- 前向计算结果：根节点的状态（h, c）、与句法树同构的前向计算结果（每个节点有它的NodeCache实例）
 data TreeFwdResult = TreeFwdResult
   { tfRootState :: LSTMState
@@ -313,29 +322,35 @@ initNetParam leafRawDim nonLeafRawDim projDim hidDim = do
     (iRW, g7) = randMat hidDim hidDim g6      -- 输入门右隐矩阵，用于右乘右孩子隐状态向量
     (iB, g8) = randVec hidDim g7              -- 输入门偏置向量
 
-    (fW, g9) = randMat hidDim projDim g8      -- 遗忘门权重矩阵，用于右乘投影层输出向量
-    (fLW, g10) = randMat hidDim hidDim g9     -- 遗忘门左隐矩阵，用于右乘左孩子隐状态向量
-    (fRW, g11) = randMat hidDim hidDim g10    -- 遗忘门右隐矩阵，用于右乘右孩子隐状态向量
-    (fB, g12) = randVec hidDim g11            -- 遗忘门偏置向量
+    (fLW, g9) = randMat hidDim projDim g8      -- 遗忘门权重矩阵，用于右乘投影层输出向量
+    (fLLW, g10) = randMat hidDim hidDim g9     -- 遗忘门左隐矩阵，用于右乘左孩子隐状态向量
+    (fLRW, g11) = randMat hidDim hidDim g10    -- 遗忘门右隐矩阵，用于右乘右孩子隐状态向量
+    (fLB, g12) = randVec hidDim g11            -- 遗忘门偏置向量
 
-    (oW, g13) = randMat hidDim projDim g12    -- 输出门权重矩阵，用于右乘投影层输出向量
-    (oLW, g14) = randMat hidDim hidDim g13    -- 输出门左隐矩阵，用于右乘左孩子隐状态向量
-    (oRW, g15) = randMat hidDim hidDim g14    -- 输出门右隐矩阵，用于右乘右孩子隐状态向量
-    (oB, g16) = randVec hidDim g15            -- 输出门偏置向量
+    (fRW, g13) = randMat hidDim projDim g12    -- 遗忘门权重矩阵，用于右乘投影层输出向量
+    (fRLW, g14) = randMat hidDim hidDim g13    -- 遗忘门左隐矩阵，用于右乘左孩子隐状态向量
+    (fRRW, g15) = randMat hidDim hidDim g14    -- 遗忘门右隐矩阵，用于右乘右孩子隐状态向量
+    (fRB, g16) = randVec hidDim g15            -- 遗忘门偏置向量
 
-    (cW, g17) = randMat hidDim projDim g16    -- 候选细胞状态权重矩阵，用于右乘投影层输出向量
-    (cLW, g18) = randMat hidDim hidDim g17    -- 候选细胞状态左隐矩阵，用于右乘左孩子隐状态向量
-    (cRW, g19) = randMat hidDim hidDim g18    -- 候选细胞状态右隐矩阵，用于右乘右孩子隐状态向量
-    (cB, g20) = randVec hidDim g19            -- 候选细胞状态偏置向量
+    (oW, g17) = randMat hidDim projDim g16    -- 输出门权重矩阵，用于右乘投影层输出向量
+    (oLW, g18) = randMat hidDim hidDim g17    -- 输出门左隐矩阵，用于右乘左孩子隐状态向量
+    (oRW, g19) = randMat hidDim hidDim g18    -- 输出门右隐矩阵，用于右乘右孩子隐状态向量
+    (oB, g20) = randVec hidDim g19            -- 输出门偏置向量
 
-    (clsW, g21) = randMat 3 (2 * hidDim) g20  -- 两棵树的根节点的隐状态拼接到三分类的投影矩阵
-    (clsB, _) = randVec 3 g21                 -- 三分类投影的偏置向量
+    (cW, g21) = randMat hidDim projDim g20    -- 候选细胞状态权重矩阵，用于右乘投影层输出向量
+    (cLW, g22) = randMat hidDim hidDim g21    -- 候选细胞状态左隐矩阵，用于右乘左孩子隐状态向量
+    (cRW, g23) = randMat hidDim hidDim g22    -- 候选细胞状态右隐矩阵，用于右乘右孩子隐状态向量
+    (cB, g24) = randVec hidDim g23            -- 候选细胞状态偏置向量
+
+    (clsW, g25) = randMat 3 (2 * hidDim) g24  -- 两棵树的根节点的隐状态拼接到三分类的投影矩阵
+    (clsB, _) = randVec 3 g25                 -- 三分类投影的偏置向量
 
   return NetParam
     { leafProjW = lProjW, leafProjB = lProjB
     , nonLeafProjW = nlProjW, nonLeafProjB = nlProjB
     , inpW = iW, inpLW = iLW, inpRW = iRW, inpB = iB
-    , forgetW = fW, forgetLW = fLW, forgetRW = fRW, forgetB = fB
+    , forgetLW = fLW, forgetLLW = fLLW, forgetLRW = fLRW, forgetLB = fLB
+    , forgetRW = fRW, forgetRLW = fRLW, forgetRRW = fRRW, forgetRB = fRB
     , outW = oW, outLW = oLW, outRW = oRW, outB = oB
     , cellCandW = cW, cellCandLW = cLW, cellCandRW = cRW, cellCandB = cB
     , clsWeight = clsW, clsBias = clsB
@@ -350,7 +365,8 @@ zeroGrad leafRawDim nonLeafRawDim projDim hidDim =
     { leafProjW = zm projDim leafRawDim, leafProjB = zv projDim
     , nonLeafProjW = zm projDim nonLeafRawDim, nonLeafProjB = zv projDim
     , inpW  = zm hidDim projDim, inpLW = zm hidDim hidDim, inpRW = zm hidDim hidDim, inpB = zv hidDim
-    , forgetW = zm hidDim projDim, forgetLW = zm hidDim hidDim, forgetRW = zm hidDim hidDim, forgetB = zv hidDim
+    , forgetLW = zm hidDim projDim, forgetLLW = zm hidDim hidDim, forgetLRW = zm hidDim hidDim, forgetLB = zv hidDim
+    , forgetRW = zm hidDim projDim, forgetRLW = zm hidDim hidDim, forgetRRW = zm hidDim hidDim, forgetRB = zv hidDim
     , outW  = zm hidDim projDim, outLW = zm hidDim hidDim, outRW = zm hidDim hidDim, outB = zv hidDim
     , cellCandW = zm hidDim projDim, cellCandLW = zm hidDim hidDim, cellCandRW = zm hidDim hidDim, cellCandB = zv hidDim
     , clsWeight = zm 3 (2 * hidDim), clsBias = zv 3
@@ -368,10 +384,14 @@ gradAdd g1 g2 = NetParam
     , inpLW = inpLW g1 + inpLW g2
     , inpRW = inpRW g1 + inpRW g2
     , inpB = inpB g1 + inpB g2
-    , forgetW = forgetW g1 + forgetW g2
     , forgetLW = forgetLW g1 + forgetLW g2
+    , forgetLLW = forgetLLW g1 + forgetLLW g2
+    , forgetLRW = forgetLRW g1 + forgetLRW g2
+    , forgetLB = forgetLB g1 + forgetLB g2
     , forgetRW = forgetRW g1 + forgetRW g2
-    , forgetB = forgetB g1 + forgetB g2
+    , forgetRLW = forgetRLW g1 + forgetRLW g2
+    , forgetRRW = forgetRRW g1 + forgetRRW g2
+    , forgetRB = forgetRB g1 + forgetRB g2
     , outW = outW g1 + outW g2
     , outLW = outLW g1 + outLW g2
     , outRW = outRW g1 + outRW g2
@@ -396,10 +416,14 @@ gradScale s g1 =
     , inpLW = scale s (inpLW g1)
     , inpRW = scale s (inpRW g1)
     , inpB = scale s (inpB g1)
-    , forgetW = scale s (forgetW g1)
     , forgetLW = scale s (forgetLW g1)
+    , forgetLLW = scale s (forgetLLW g1)
+    , forgetLRW = scale s (forgetLRW g1)
+    , forgetLB = scale s (forgetLB g1)
     , forgetRW = scale s (forgetRW g1)
-    , forgetB = scale s (forgetB g1)
+    , forgetRLW = scale s (forgetRLW g1)
+    , forgetRRW = scale s (forgetRRW g1)
+    , forgetRB = scale s (forgetRB g1)
     , outW = scale s (outW g1)
     , outLW = scale s (outLW g1)
     , outRW = scale s (outRW g1)
@@ -420,7 +444,8 @@ clipGrad maxNorm g =
       collectNorms = [ matNorm (leafProjW g), vecNorm (leafProjB g)
                      , matNorm (nonLeafProjW g), vecNorm (nonLeafProjB g)
                      , matNorm (inpW g), matNorm (inpLW g), matNorm (inpRW g), vecNorm (inpB g)
-                     , matNorm (forgetW g), matNorm (forgetLW g), matNorm (forgetRW g), vecNorm (forgetB g)
+                     , matNorm (forgetLW g), matNorm (forgetLLW g), matNorm (forgetLRW g), vecNorm (forgetLB g)
+                     , matNorm (forgetRW g), matNorm (forgetRLW g), matNorm (forgetRRW g), vecNorm (forgetRB g)
                      , matNorm (outW g), matNorm (outLW g), matNorm (outRW g), vecNorm (outB g)
                      , matNorm (cellCandW g), matNorm (cellCandLW g), matNorm (cellCandRW g), vecNorm (cellCandB g)
                      , matNorm (clsWeight g), vecNorm (clsBias g)
@@ -444,10 +469,14 @@ updateParam lr grad p =
     , inpLW  = updateMat (inpLW p) (inpLW grad)
     , inpRW  = updateMat (inpRW p) (inpRW grad)
     , inpB  = updateVec (inpB p) (inpB grad)
-    , forgetW = updateMat (forgetW p) (forgetW grad)
     , forgetLW = updateMat (forgetLW p) (forgetLW grad)
+    , forgetLLW = updateMat (forgetLLW p) (forgetLLW grad)
+    , forgetLRW = updateMat (forgetLRW p) (forgetLRW grad)
+    , forgetLB = updateVec (forgetLB p) (forgetLB grad)
     , forgetRW = updateMat (forgetRW p) (forgetRW grad)
-    , forgetB = updateVec (forgetB p) (forgetB grad)
+    , forgetRLW = updateMat (forgetRLW p) (forgetRLW grad)
+    , forgetRRW = updateMat (forgetRRW p) (forgetRRW grad)
+    , forgetRB = updateVec (forgetRB p) (forgetRB grad)
     , outW  = updateMat (outW p) (outW grad)
     , outLW  = updateMat (outLW p) (outLW grad)
     , outRW  = updateMat (outRW p) (outRW grad)
@@ -467,7 +496,7 @@ treeForwardCached param EmptySTree =         -- 空节点不参与参数更新�
     hidDim = netHidDim param
   in TreeFwdResult (emptyLSTMState hidDim) EmptySTree
 
-treeForwardCached param st@STreeNode{nodeData = feat, stLeft = l, stRight = r, stIsLeaf = isLeafNode} =
+treeForwardCached param st@STreeNode{nodeData = feat, stLeft = l, stRight = r, stIsLeaf = isLeafFlag} =
   let
     leftRes = treeForwardCached param l
     rightRes = treeForwardCached param r
@@ -476,12 +505,12 @@ treeForwardCached param st@STreeNode{nodeData = feat, stLeft = l, stRight = r, s
     NetParam{..} = param
 
     hidDim = netHidDim param
-    projFeat = projectRawFeat param isLeafNode feat
+    projFeat = projectRawFeat param isLeafFlag feat
 
     -- ========== 修复：输入门/输出门/cell候选 并入左右子树隐状态 ==========
     inpGatePre     = inpW #> projFeat + inpLW #> hl + inpRW #> hr + inpB
-    forgetLPre     = forgetW #> projFeat + forgetLW #> hl + forgetRW #> hr + forgetB
-    forgetRPre     = forgetW #> projFeat + forgetLW #> hl + forgetRW #> hr + forgetB
+    forgetLPre     = forgetLW #> projFeat + forgetLLW #> hl + forgetLRW #> hr + forgetLB
+    forgetRPre     = forgetRW #> projFeat + forgetRLW #> hl + forgetRRW #> hr + forgetRB
     outGatePre     = outW #> projFeat + outLW #> hl + outRW #> hr + outB
     cellCandPre    = cellCandW #> projFeat + cellCandLW #> hl + cellCandRW #> hr + cellCandB
 
@@ -505,9 +534,9 @@ treeForwardCached param st@STreeNode{nodeData = feat, stLeft = l, stRight = r, s
       , ncInpGate = inpGate, ncForgetLG = forgetLGate, ncForgetRG = forgetRGate
       , ncOutGate = outGate, ncCellCand = cellCand, ncNewC = newC, ncNewH = newH
       , ncLeftH = hl, ncLeftC = cl, ncRightH = hr, ncRightC = cr
-      , ncIsLeaf = isLeafNode
+      , ncIsLeaf = isLeafFlag
       }
-    cachedNode = STreeNode cache (tfCacheTree leftRes) (tfCacheTree rightRes) isLeafNode    -- 函数 tfCacheTree 读取子树前向计算结果的缓存树 STreeNode
+    cachedNode = STreeNode cache (tfCacheTree leftRes) (tfCacheTree rightRes) isLeafFlag    -- 函数 tfCacheTree 读取子树前向计算结果的缓存树 STreeNode
   in TreeFwdResult (LSTMState newH newC) cachedNode
 
 -- ===================== 反向传播 Node BP =====================
@@ -543,22 +572,20 @@ backwardNode NetParam{..} nc@NodeCache{..} dLdh dLdc =
     dLdProjFeat = tr' inpW #> dLdRawInp                     -- inpW #> projFeat
                 + tr' outW #> dLdRawOut                     -- outW #> projFeat
                 + tr' cellCandW #> dLdRawCell               -- cellCandW #> projFeat
-                + tr' forgetW #> dLdRawForgetL              -- forgetW #> projFeat
-                + tr' forgetW #> dLdRawForgetR              -- forgetW #> projFeat
+                + tr' forgetLW #> dLdRawForgetL             -- forgetLW #> projFeat
+                + tr' forgetRW #> dLdRawForgetR             -- forgetRW #> projFeat
 
-    dLdhL = tr' inpLW #> dLdRawInp
-          + tr' forgetLW #> dLdRawForgetL
-          + tr' forgetLW #> dLdRawForgetR
+    dLdhL = tr' inpLW #> dLdRawInp                          -- hl joins calculating preactivations of all gates
+          + tr' forgetLLW #> dLdRawForgetL                  -- by left multiplying inpLW, forgetLLW, forgetRLW, outLW, and cellCandLW
+          + tr' forgetRLW #> dLdRawForgetR
           + tr' outLW #> dLdRawOut
           + tr' cellCandLW #> dLdRawCell
 
-
-
-    dLdcL = dLdnewC * ncForgetLG                            -- dLdcL = dLdnewC * dnewCdcL = dLdnewC * ncForgetLG
-
-    dLdhR = tr' inpRW #> dLdRawInp
-          + tr' forgetRW #> dLdRawForgetL
-          + tr' forgetRW #> dLdRawForgetR
+    dLdcL = dLdnewC * ncForgetLG                            -- cl joins calculating NEW preactivation of cellCand gate.
+                                                            -- dLdcL = dLdnewC * dnewCdcL = dLdnewC * ncForgetLG
+    dLdhR = tr' inpRW #> dLdRawInp                          -- hr joins calculating preactivations of all gates
+          + tr' forgetLRW #> dLdRawForgetL                  -- by left multiplying inpRW, forgetLRW, forgetRRW, outRW, and cellCandRW
+          + tr' forgetRRW #> dLdRawForgetR
           + tr' outRW #> dLdRawOut
           + tr' cellCandRW #> dLdRawCell
 
@@ -589,10 +616,15 @@ backwardNode NetParam{..} nc@NodeCache{..} dLdh dLdc =
     gradInpRW = outer dLdRawInp ncRightH
     gradInpB = dLdRawInp
 
-    gradForgetW = outer dLdRawForgetL ncProjFeat + outer dLdRawForgetR ncProjFeat
-    gradForgetLW = outer dLdRawForgetL ncLeftH + outer dLdRawForgetR ncLeftH
-    gradForgetRW = outer dLdRawForgetL ncRightH + outer dLdRawForgetR ncRightH
-    gradForgetB = dLdRawForgetL + dLdRawForgetR
+    gradForgetLW = outer dLdRawForgetL ncProjFeat
+    gradForgetLLW = outer dLdRawForgetL ncLeftH
+    gradForgetLRW = outer dLdRawForgetL ncRightH
+    gradForgetLB = dLdRawForgetL
+
+    gradForgetRW = outer dLdRawForgetR ncProjFeat
+    gradForgetRLW = outer dLdRawForgetR ncLeftH
+    gradForgetRRW = outer dLdRawForgetR ncRightH
+    gradForgetRB = dLdRawForgetR
 
     gradOutW = outer dLdRawOut ncProjFeat
     gradOutLW = outer dLdRawOut ncLeftH
@@ -606,10 +638,10 @@ backwardNode NetParam{..} nc@NodeCache{..} dLdh dLdc =
 
     lstmGrad = zeroG
       { inpW = gradInpW, inpLW = gradInpLW, inpRW = gradInpRW, inpB = gradInpB
-      , forgetW = gradForgetW, forgetLW = gradForgetLW, forgetRW = gradForgetRW, forgetB = gradForgetB
+      , forgetLW = gradForgetLW, forgetLLW = gradForgetLLW, forgetLRW = gradForgetLRW, forgetLB = gradForgetLB
+      , forgetRW = gradForgetRW, forgetRLW = gradForgetRLW, forgetRRW = gradForgetRRW, forgetRB = gradForgetRB
       , outW = gradOutW, outLW = gradOutLW, outRW = gradOutRW, outB = gradOutB
       , cellCandW = gradCellCandW, cellCandLW = gradCellCandLW, cellCandRW = gradCellCandRW, cellCandB = gradCellCandB
-
     }
 
     fullGrad = projGrad `gradAdd` lstmGrad
@@ -641,6 +673,7 @@ sampleForwardLossGrad param ((ltree, rtree), action) =
     rFwd = treeForwardCached param rtree
     LSTMState hl _ = tfRootState lFwd
     LSTMState hr _ = tfRootState rFwd
+
     concatH = LA.vjoin [hl, hr]
     NetParam{..} = param
     logits = clsWeight #> concatH + clsBias
@@ -654,8 +687,8 @@ sampleForwardLossGrad param ((ltree, rtree), action) =
     dLdConcatH = tr' clsWeight #> dLdLogit
     dLdHl = subVector 0 hidDim dLdConcatH
     dLdHr = subVector hidDim (LA.size dLdConcatH - hidDim) dLdConcatH
-    gradL = backwardTree param (tfCacheTree lFwd) dLdHl (konst 0.0 hidDim)           -- 这里, dLdCl 是零向量，合适吗？
-    gradR = backwardTree param (tfCacheTree rFwd) dLdHr (konst 0.0 hidDim)           -- 这里，dLdCr 是零向量，合适吗？
+    gradL = backwardTree param (tfCacheTree lFwd) dLdHl (konst 0.0 (size dLdHl))
+    gradR = backwardTree param (tfCacheTree rFwd) dLdHr (konst 0.0 (size dLdHr))
     totalGrad0 = gradL `gradAdd` gradR
     totalGrad = totalGrad0
       { clsWeight = gradClsW
@@ -780,6 +813,8 @@ createRandomVecForOOV = do
                                     , stRight :: SyntaxTree a
                                     , stIsLeaf :: Bool
                                     } deriving (Show, Eq)
+ - type PhraSyn0 = (Category, Tag, PhraStru)
+ - Count OOV words and non-OOV words. When embedding vectors of words are not used, oovCnt and noovCnt denote number of leaves and that of non-leaves.
  -}
 biTreePhraSyn0Seman2SyntaxTreeNodeFeat :: BiTree (PhraSyn0, Term)
                                      -> Map Category (Vector Double)
@@ -789,74 +824,130 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat :: BiTree (PhraSyn0, Term)
                                      -> Int
                                      -> Int
                                      -> [Double]
-                                     -> IO (SyntaxTree NodeFeat)
-biTreePhraSyn0Seman2SyntaxTreeNodeFeat Empty _ _ _ _ _ _ _ = return EmptySTree
-biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov = do
+                                     -> Int                           -- Num. of OOV words in this tree
+                                     -> Int                           -- Num. of non-OOV words in this tree
+                                     -> Bool                          -- Use embedding vector of words or not
+                                     -> IO (SyntaxTree NodeFeat, Int, Int)
+biTreePhraSyn0Seman2SyntaxTreeNodeFeat Empty _ _ _ _ _ _ _ _ _ _ = return (EmptySTree, 0, 0)
+biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov oovCnt noovCnt useEmbVec = do
+--    putStrLn $ "PhraSyn0: (" ++ show (fst3 phraSyn0) ++ ", " ++ throwFstLast (snd3 phraSyn0) ++ ", " ++ throwFstLast (thd3 phraSyn0) ++ ")"
     let
         (v1, g1) = randVec dim_cate (mkStdGen 42)
         (v2, g2) = randVec dim_tag g1
         (v3, _) = randVec dim_stru g2
-        cateVec = fromMaybe v1 $ Map.lookup (fst3 phraSyn0) cateVecMap
-        tagVec = fromMaybe v2 $ Map.lookup (snd3 phraSyn0) tagVecMap
-        struVec = fromMaybe v3 $ Map.lookup (thd3 phraSyn0) struVecMap
+        cate = fst3 phraSyn0
+        tag = (throwFstLast . snd3) phraSyn0                 -- String as "<" and "T->B" in which there is no double quotes.
+        stru = (throwFstLast . thd3) phraSyn0                -- String as "AHn" and "OE" in which there is no double quotes.
+        cateVec' = Map.lookup cate cateVecMap                -- Maybe Double
+        tagVec' = Map.lookup tag tagVecMap
+        struVec' = Map.lookup stru struVecMap
+        cateVec = fromMaybe v1 cateVec'
+        tagVec = fromMaybe v2 tagVec'
+        struVec = fromMaybe v3 struVec'
+
 {-
+    case cateVec' of
+      Just x -> putStrLn $ "Find (" ++ show (fst3 phraSyn0) ++ ", " ++ listToString (formatDoubleList (LA.toList x) 4) ++ ")"
+      Nothing -> putStrLn $ "Not find vector for category '" ++ show (fst3 phraSyn0) ++ "'"
+    case tagVec' of
+      Just x -> putStrLn $ "Find (\"" ++ tag ++ "\", " ++ listToString (formatDoubleList (LA.toList x) 4) ++ ")"
+      Nothing -> putStrLn $ "Not find vector for tag '" ++ tag ++ "'"          -- When Tag value is 'Desig'
+    case struVec' of
+      Just x -> putStrLn $ "Find (\"" ++ stru ++ "\", " ++ listToString (formatDoubleList (LA.toList x) 4) ++ ")"
+      Nothing -> putStrLn $ "Not find vector for phrasal structure '" ++ stru ++ "'"    -- When PhraStru value is 'DE'
+
     putStrLn $ "  seman: " ++ show semanTerm
     putStrLn $ "  cateVec: " ++ show cateVec
     putStrLn $ "  tagVec: " ++ show tagVec
     putStrLn $ "  struVec: " ++ show struVec
  -}
-    confInfo <- readFile "Configuration"
-    let wordEmbTbl = getConfProperty "wordEmbTbl" confInfo
-    conn <- getConn
-    let sqlstat = Query $ DS.fromString ("select CAST(emb AS CHAR) from " ++ wordEmbTbl ++ " where word = ?")
+    if useEmbVec                 -- Using embedding vector when node is a leaf.
+      then do
+        confInfo <- readFile "Configuration"
+        let wordEmbTbl = getConfProperty "wordEmbTbl" confInfo
+        conn <- getConn
+        let sqlstat = Query $ DS.fromString ("select CAST(emb AS CHAR) from " ++ wordEmbTbl ++ " where word = ?")
 
-    if isPrimTerm semanTerm
-      then do                 -- Word seman
---        putStrLn $ "  It's a primitive term."
-        let seman = init $ show semanTerm
-        (defs, is) <- query conn sqlstat [MySQLText (T.pack seman)]       -- Search database table 'wordEmbTbl'
-        rows <- S.toList is
---        putStrLn $ "  Size of rows: " ++ show (length rows)
-        close conn
-        if rows == []                      -- OOV
-          then do
-{-            (defs, is) <- query conn sqlstat [toMySQLText "<OOV>"]
-            rows' <- S.toList is
+        if isPrimTerm semanTerm
+          then do                 -- Word seman
+--            putStrLn $ "  It's a primitive term."
+            let seman = init $ show semanTerm
+            (defs, is) <- query conn sqlstat [MySQLText (T.pack seman)]       -- Search database table 'wordEmbTbl'
+            rows <- S.toList is
+--            putStrLn $ "  Size of rows: " ++ show (length rows)
             close conn
-            if rows' == []                 -- [[MySQLValue]]
-              then error "biTreePhraSyn0Seman2SyntaxTreeNodeFeat: OOV is NOT in 'wordEmbTbl'."
-              else do                      -- rows' = [[MySQLBytes]]
-                let embVec = (fromMaybe' . fromMySQLJSON) ((rows'!!0)!!0)     -- decode :: ByteString -> Maybe [Double]
-                putStrLn $ seman ++ "  Use <OOV> vector"
-                return STreeNode { nodeData = LA.vjoin [cateVec, LA.fromList embVec]
-                                 , stLeft = EmptySTree
-                                 , stRight = EmptySTree
-                                 , stIsLeaf = True
-                                 }
+            if rows == []                      -- OOV
+              then do
+{-              putStrLn $ seman ++ "  Use <OOV> vector"
+                (defs, is) <- query conn sqlstat [toMySQLText "<OOV>"]
+                rows' <- S.toList is
+                close conn
+                if rows' == []                 -- [[MySQLValue]]
+                  then error "biTreePhraSyn0Seman2SyntaxTreeNodeFeat: OOV is NOT in 'wordEmbTbl'."
+                  else do                      -- rows' = [[MySQLBytes]]
+                    let embVec = (fromMaybe' . fromMySQLJSON) ((rows'!!0)!!0)     -- decode :: ByteString -> Maybe [Double]
+                    return ( STreeNode { nodeData = LA.vjoin [cateVec, LA.fromList embVec]
+                                       , stLeft = EmptySTree
+                                       , stRight = EmptySTree
+                                       , stIsLeaf = True
+                                       }
+                            , oovCnt + 1, noovCnt
+                            )
  -}
-            return STreeNode { nodeData = LA.vjoin [cateVec, LA.fromList oov]
-                             , stLeft = EmptySTree
-                             , stRight = EmptySTree
-                             , stIsLeaf = True
-                             }
-          else do                         -- Not OOV
-            let embVec = (fromMaybe' . fromMySQLJSON) ((rows!!0)!!0)     -- [Double]
---            putStrLn $ "  embVec(" ++ seman ++ "): " ++ show embVec
-            return STreeNode { nodeData = LA.vjoin [cateVec, LA.fromList embVec]
-                             , stLeft = EmptySTree
-                             , stRight = EmptySTree
-                             , stIsLeaf = True
-                             }
-      else do           -- Phrasal seman
---        putStrLn $ "  It's a compound term."
-        lt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat lt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov
-        rt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat rt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov
-        close conn
-        return STreeNode { nodeData = LA.vjoin [cateVec, tagVec, struVec]
-                         , stLeft = lt
-                         , stRight = rt
-                         , stIsLeaf = False
-                         }
+                return ( STreeNode { nodeData = LA.vjoin [cateVec, LA.fromList oov]
+                                   , stLeft = EmptySTree
+                                   , stRight = EmptySTree
+                                   , stIsLeaf = True
+                                   }
+                       , oovCnt + 1, noovCnt
+                       )
+              else do                         -- Not OOV
+                let embVec = (fromMaybe' . fromMySQLJSON) ((rows!!0)!!0)     -- [Double]
+--                putStrLn $ "  embVec(" ++ seman ++ "): " ++ show embVec
+                return ( STreeNode { nodeData = LA.vjoin [cateVec, LA.fromList embVec]
+                                   , stLeft = EmptySTree
+                                   , stRight = EmptySTree
+                                   , stIsLeaf = True
+                                   }
+                       , oovCnt, noovCnt + 1
+                       )
+          else do           -- Phrasal seman
+--          putStrLn $ "  It's a compound term."
+            (lt, oovCnt', noovCnt') <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat lt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov oovCnt noovCnt useEmbVec
+            (rt, oovCnt'', noovCnt'') <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat rt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov oovCnt' noovCnt' useEmbVec
+            close conn
+            return ( STreeNode { nodeData = LA.vjoin [cateVec, tagVec, struVec]
+                               , stLeft = lt
+                               , stRight = rt
+                               , stIsLeaf = False
+                               }
+                   , oovCnt'', noovCnt''
+                   )
+
+      else
+        if isPrimTerm semanTerm
+          then do
+            putStrLn $ "  Leaf node: " ++ show semanTerm
+            putStrLn $ "  Verify cateVec, tagVec, and struVec: " ++ show (cateVec /= v1 && tagVec == v2 && struVec == v3)
+            return ( STreeNode { nodeData = cateVec
+                                  , stLeft = EmptySTree
+                                  , stRight = EmptySTree
+                                  , stIsLeaf = True
+                                  }
+                      , oovCnt + 1, noovCnt
+                      )
+          else do
+            putStrLn $ " Non-leaf node: " ++ show semanTerm
+            putStrLn $ " Verify cateVec, tagVec, and struVec: " ++ show (cateVec /= v1 && tagVec /= v2 && struVec /= v3)
+            (lt, oovCnt', noovCnt') <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat lt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov oovCnt noovCnt useEmbVec
+            (rt, oovCnt'', noovCnt'') <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat rt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov oovCnt' noovCnt' useEmbVec
+            return ( STreeNode { nodeData = LA.vjoin [cateVec, tagVec, struVec]
+                               , stLeft = lt
+                               , stRight = rt
+                               , stIsLeaf = False
+                               }
+                   , oovCnt'', noovCnt'' + 1
+                   )
 
 buildSampleSet :: Int -> Int -> Int -> IO [SampleRecord]
 buildSampleSet dim_cate dim_tag dim_stru = do
@@ -866,11 +957,13 @@ buildSampleSet dim_cate dim_tag dim_stru = do
       syntax_resol_sample_endId = getConfProperty "syntax_resol_sample_endId" confInfo
       startId = read syntax_resol_sample_startId :: Int
       endId = read syntax_resol_sample_endId :: Int
-
+      leafUsingEmbVec = getConfProperty "leafUsingEmbVec" confInfo
+      useEmbVec = read leafUsingEmbVec :: Bool
+{-
   putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
   putStrLn $ " syntax_resol_sample_startId: " ++ syntax_resol_sample_startId
   putStrLn $ " syntax_resol_sample_endId: " ++ syntax_resol_sample_endId
-
+ -}
   conn <- getConn
   let sqlstat = DS.fromString $ "select leftOverTree, leftOverSeman, rightOverTree, rightOverSeman, clauTagPrior from "
                                 ++ syntax_ambig_resol_model ++ " where id >= ? && id <= ?"
@@ -895,24 +988,31 @@ buildSampleSet dim_cate dim_tag dim_stru = do
                                   , fif5 x
                                  )
                           ) lotLosRotRosPriorList           -- [((BiTree (PhraSyn0, Term), BiTree (PhraSyn0, Term)), Prior)]
-  putStrLn $ "Sample number = " ++ show (length lotLosRotRosPriorList) ++ ", the first is: " ++ show (loRoPriorList!!0)
+--  putStrLn $ "Sample number = " ++ show (length lotLosRotRosPriorList) ++ ", the first is: " ++ show (loRoPriorList!!0)
 
   cateVecMap <- cate2Vec                         -- Map Category (Vector Double)
   tagVecMap <- tag2Vec                           -- Map Tag (Vector Double)
   struVecMap <- stru2Vec                         -- Map PhraStru (Vector Double)
 
-  sampleSet <- mapWithProgressStep 100
-                  (\x -> do
-                            lt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat ((fst . fst) x) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov300
-                            rt <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat ((snd . fst) x) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov300
-                            let prior = snd x
-                            return SampleRecord{ recLeftTree = lt
-                                               , recRightTree = rt
-                                               , recTargetAct = prior
-                                               }
-                  ) loRoPriorList
-
+  sampleSetWithOOVCnt <- mapWithProgressStep 100
+      (\x -> do
+          (lot, loovCnt, lnoovCnt) <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat ((fst . fst) x) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov300 0 0 useEmbVec
+          (rot, roovCnt, rnoovCnt) <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat ((snd . fst) x) cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov300 0 0 useEmbVec
+          let prior = snd x
+          return ( SampleRecord{ recLeftTree = lot
+                               , recRightTree = rot
+                               , recTargetAct = prior
+                               }
+                  , loovCnt + roovCnt                  -- Total of OOV words in two trees
+                  , lnoovCnt + rnoovCnt                -- Total of non-OOV words in two trees
+                  )
+      ) loRoPriorList
+  let sampleSet = map fst3 sampleSetWithOOVCnt
+      oovTotal = foldl (+) 0 $ map snd3 sampleSetWithOOVCnt
+      noovTotal = foldl (+) 0 $ map thd3 sampleSetWithOOVCnt
+      prop = 100 * (fromIntegral oovTotal / fromIntegral noovTotal) :: Double
 --  putStrLn $ "buildSampleSet: sampleSet!!0: " ++ show (sampleSet!!0)
+  putStrLn $ "buildSampleSet: oovTotal = " ++ show oovTotal ++ ", noovTotal = " ++ show noovTotal ++ ", proportion of oov words = " ++ (printf "%.2f" prop) ++ "%"
   return sampleSet
 
 -- 评估整个数据集上模型预测的平均损失率
@@ -944,18 +1044,25 @@ trainLoop2 initParam trainSet valSet lr maxEpoch patience batchSize = go initPar
           newParam <- trainOneEpoch currParam trainSet lr batchSize
           -- 2. 在验证集评估
           let newValLoss = evalLoss newParam valSet
-          putStr $ "Epoch " ++ show epoch ++ " | 验证集平均损失: " ++ show newValLoss
+              newTrainLoss = evalLoss newParam trainSet
+          putStr $ "Epoch " ++ show epoch ++ " | 训练集损失：" ++ show newTrainLoss ++ ", 验证集损失: " ++ show newValLoss
 
           confInfo <- readFile "Configuration"
           let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+              syntax_resol_sample_startId = getConfProperty "syntax_resol_sample_startId" confInfo
+              syntax_resol_sample_endId = getConfProperty "syntax_resol_sample_endId" confInfo
+              startId = read syntax_resol_sample_startId :: Int
+              endId = read syntax_resol_sample_endId :: Int
+              sampleNum = endId - startId + 1
               dim_proj = getConfProperty "dim_proj" confInfo
+
               lr_str = show $ floor (lr * 1000)
-              lossColName = "loss_" ++ "dim" ++ dim_proj ++ "_lr" ++ lr_str ++ "_batch" ++ show batchSize
-              tblName = syntax_ambig_resol_model ++ "_train_" ++ "dim" ++ dim_proj ++ "_lr" ++ lr_str ++ "_batch" ++ show batchSize
-              sqlstat = DS.fromString $ "INSERT INTO " ++ tblName ++ " set epoch = ?, " ++ lossColName ++ " = ?"
+              tblNameSuffix = "_train_dim" ++ dim_proj ++ "_lr" ++ lr_str ++ "_batch" ++ show batchSize ++ "_sampleNum" ++ show sampleNum
+              tblName = syntax_ambig_resol_model ++ tblNameSuffix
+              sqlstat = DS.fromString $ "INSERT INTO " ++ tblName ++ " set epoch = ?, train_set_loss = ?, val_set_loss = ?"
           conn <- getConn
           stmt <- prepareStmt conn sqlstat
-          executeStmt conn stmt [toMySQLInt32U epoch, toMySQLDouble newValLoss]
+          executeStmt conn stmt [toMySQLInt32U epoch, toMySQLDouble newTrainLoss, toMySQLDouble newValLoss]
           closeStmt conn stmt
           close conn
 
@@ -1001,6 +1108,7 @@ testPipeline2 = do
     epochs_str = getConfProperty "epochs" confInfo
     earlyStopPatience_str = getConfProperty "earlyStopPatience" confInfo
     batchSize_str = getConfProperty "batchSize" confInfo
+    useEmbVec_str = getConfProperty "leafUsingEmbVec" confInfo
 
     dim_word = read dim_word_str :: Int
     dim_cate = read dim_cate_str :: Int
@@ -1012,8 +1120,11 @@ testPipeline2 = do
     epochs = read epochs_str :: Int
     earlyStopPatience = read earlyStopPatience_str :: Int
     batchSize = read batchSize_str :: Int
+    useEmbVec = read useEmbVec_str :: Bool
 
-    leafRawDim    = dim_word + dim_cate
+    leafRawDim    = case useEmbVec of
+                      True -> dim_word + dim_cate
+                      False -> dim_word
     nonLeafRawDim = dim_cate + dim_tag + dim_stru
 
   putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
@@ -1029,16 +1140,20 @@ testPipeline2 = do
   putStrLn $ " epochs: " ++ epochs_str
   putStrLn $ " earlyStopPatience: " ++ earlyStopPatience_str
   putStrLn $ " batchSize: " ++ batchSize_str
+  putStrLn $ " useEmbVec: " ++ useEmbVec_str
 
-  let prompt = " Test the building of sample set in Module BiTreeLSTM, are you sure? [y/n] (RETURN for 'y'): "
+  let prompt = " Train Binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM, are you sure? [y/n] (RETURN for 'y'): "
   answer <- getLineUntil prompt ["y","n"] True
   if answer == "y"
     then do
       -- ========== 清空存储训练过程损失率的 MySQL 表 ==========
       let
           lr_str = show $ floor (lr * 1000)
-          lossColName = "loss_" ++ "dim" ++ dim_proj_str ++ "_lr" ++ lr_str ++ "_batch" ++ batchSize_str
-          tblName = syntax_ambig_resol_model ++ "_train_" ++ "dim" ++ dim_proj_str ++ "_lr" ++ lr_str ++ "_batch" ++ batchSize_str
+          startId = read syntax_resol_sample_startId :: Int
+          endId = read syntax_resol_sample_endId :: Int
+          sampleNum = endId - startId + 1
+          tblNameSuffix = "_train_dim" ++ dim_proj_str ++ "_lr" ++ lr_str ++ "_batch" ++ show batchSize ++ "_sampleNum" ++ show sampleNum
+          tblName = syntax_ambig_resol_model ++ tblNameSuffix
           sqlstat1 = DS.fromString $ "SELECT EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA='ccg4c' AND TABLE_NAME='"
                                      ++ tblName ++ "') AS table_exist"
       conn <- getConn
@@ -1055,54 +1170,128 @@ testPipeline2 = do
                close conn
                error $ "Impossible"
         1 -> do
-               let sqlstat2 = DS.fromString $ "DELETE FROM " ++ tblName
-               stmt <- prepareStmt conn sqlstat2
-               executeStmt conn stmt []
-               closeStmt conn stmt
-               close conn
+               let prompt = " Records in Table " ++ tblName ++ " will be removed, are you sure? [y/n] (RETURN for 'n'): "
+               answer <- getLineUntil prompt ["y","n"] False
+               if answer == "y"
+                 then do
+                   let sqlstat2 = DS.fromString $ "DELETE FROM " ++ tblName
+                   stmt <- prepareStmt conn sqlstat2
+                   executeStmt conn stmt []
+                   closeStmt conn stmt
+                   close conn
 
-               initP <- initNetParam leafRawDim nonLeafRawDim projDim hidDim
-               samples0 <- buildSampleSet dim_cate dim_tag dim_stru
-               let samples = map (\x -> ((recLeftTree x, recRightTree x), recTargetAct x)) samples0
-               putStrLn $ "总样本数量：" ++ show (length samples)
+                   initP <- initNetParam leafRawDim nonLeafRawDim projDim hidDim
+                   samples0 <- buildSampleSet dim_cate dim_tag dim_stru
+                   let samples = map (\x -> ((recLeftTree x, recRightTree x), recTargetAct x)) samples0
+                   putStrLn $ "总样本数量：" ++ show (length samples)
 
-               -- ========== 8:1:1 数据集划分 ==========
-               gen <- newStdGen
-               let shuffledSamples = shuffle_ samples gen
-                   total = length shuffledSamples
-                   splitTrain  = floor $ 0.8 * fromIntegral total
-                   splitVal    = floor $ 0.9 * fromIntegral total
-                   (trainSet, rest) = splitAt splitTrain shuffledSamples
-                   (valSet, testSet) = splitAt (splitVal - splitTrain) rest
-               putStrLn $ "训练集(80%)样本数：" ++ show (length trainSet)
-               putStrLn $ "验证集(10%)样本数：" ++ show (length valSet)
-               putStrLn $ "测试集(10%)样本数：" ++ show (length testSet)
+                   -- ========== 8:1:1 数据集划分 ==========
+                   gen <- newStdGen
+                   let shuffledSamples = shuffle_ samples gen
+                       total = length shuffledSamples
+                       splitTrain  = floor $ 0.8 * fromIntegral total
+                       splitVal    = floor $ 0.9 * fromIntegral total
+                       (trainSet, rest) = splitAt splitTrain shuffledSamples
+                       (valSet, testSet) = splitAt (splitVal - splitTrain) rest
+                   putStrLn $ "训练集(80%)样本数：" ++ show (length trainSet)
+                   putStrLn $ "验证集(10%)样本数：" ++ show (length valSet)
+                   putStrLn $ "测试集(10%)样本数：" ++ show (length testSet)
 
-               -- ========== 带验证+早停训练，返回验证最优模型 ==========
-               bestTrainedP <- trainLoop2 initP trainSet valSet lr epochs earlyStopPatience batchSize
+                   -- ========== 带验证+早停训练，返回验证最优模型 ==========
+                   bestTrainedP <- trainLoop2 initP trainSet valSet lr epochs earlyStopPatience batchSize
 
-               -- ========== 【最终评估：独立测试集，仅执行一次】 ==========
-               putStrLn "\n====【最终测试集评估】===="
-               case testSet of
-                 [] -> putStrLn "警告：测试集为空，无法评估！"
-                 _ -> do
-                   let totalLoss = evalLoss bestTrainedP testSet
-                       predPairs = map (\s -> let ((l,r),t) = s
-                                                  fL = treeForwardCached bestTrainedP l
-                                                  fR = treeForwardCached bestTrainedP r
-                                                  LSTMState hL _ = tfRootState fL
-                                                  LSTMState hR _ = tfRootState fR
-                                                  concatH = LA.vjoin [hL,hR]
-                                                  log = clsWeight bestTrainedP #> concatH + clsBias bestTrainedP
-                                                  pAct = vecToAction (softmax log)
-                                              in (pAct, t)
-                                       ) testSet
-                       correct = length $ filter (\(p,t) -> p == t) predPairs
-                       total = length testSet
-                       acc = fromIntegral correct / fromIntegral total :: Double
-                   putStrLn "\n====【完整测试集正式评估结果】===="
-                   putStrLn $ "测试集平均损失：" ++ show totalLoss
-                   putStrLn $ "正确样本数：" ++ show correct ++ " / " ++ show total
-                   putStrLn $ "测试集准确率：" ++ show acc
+                   -- ========== 【最终评估：独立测试集，仅执行一次】 ==========
+                   putStrLn "\n====【最终测试集评估】===="
+                   case testSet of
+                     [] -> putStrLn "警告：测试集为空，无法评估！"
+                     _ -> do
+                       let totalLoss = evalLoss bestTrainedP testSet
+                           predPairs = map (\s -> let ((l,r),t) = s
+                                                      fL = treeForwardCached bestTrainedP l
+                                                      fR = treeForwardCached bestTrainedP r
+                                                      LSTMState hL _ = tfRootState fL
+                                                      LSTMState hR _ = tfRootState fR
+                                                      concatH = LA.vjoin [hL,hR]
+                                                      log = clsWeight bestTrainedP #> concatH + clsBias bestTrainedP
+                                                      pAct = vecToAction (softmax log)
+                                                  in (pAct, t)
+                                           ) testSet
+                           correct = length $ filter (\(p,t) -> p == t) predPairs
+                           total = length testSet
+                           acc = fromIntegral correct / fromIntegral total :: Double
 
+                       -- True/False: Predict correctly, Positive/Negative: Prediction result
+                       -- TP: True Positive, FN: False Negative, FP: False Positive.
+
+                           tp_Lp = length $ filter (\(p,t) -> p == Lp && t == Lp) predPairs   -- True Positive for 'Lp'
+                           tp_Rp = length $ filter (\(p,t) -> p == Rp && t == Rp) predPairs   -- True Positive for 'Rp'
+                           tp_Noth = length $ filter (\(p,t) -> p == Noth && t == Noth) predPairs   -- True Positive for 'Noth'
+
+                           fn_Lp = length $ filter (\(p,t) -> p /= Lp && t == Lp) predPairs   -- False Negative for 'Lp'
+                           fn_Rp = length $ filter (\(p,t) -> p /= Rp && t == Rp) predPairs   -- False Negative for 'Rp'
+                           fn_Noth = length $ filter (\(p,t) -> p /= Noth && t == Noth) predPairs   -- False Negative for 'Noth'
+
+                           fp_Lp = length $ filter (\(p,t) -> p == Lp && t /= Lp) predPairs   -- False Positives for 'Lp'
+                           fp_Rp = length $ filter (\(p,t) -> p == Rp && t /= Rp) predPairs   -- False Positives for 'Rp'
+                           fp_Noth = length $ filter (\(p,t) -> p == Noth && t /= Noth) predPairs   -- False Positives for 'Noth'
+
+                           precision_Lp = case tp_Lp + fp_Lp > 0 of
+                                            True -> fromIntegral tp_Lp / (fromIntegral (tp_Lp + fp_Lp))
+                                            False -> 0.0
+                           precision_Rp = case tp_Rp + fp_Rp > 0 of
+                                            True -> fromIntegral tp_Rp / (fromIntegral (tp_Rp + fp_Rp))
+                                            False -> 0.0
+                           precision_Noth = case tp_Noth + fp_Noth > 0 of
+                                              True -> fromIntegral tp_Noth / (fromIntegral (tp_Noth + fp_Noth))
+                                              False -> 0.0
+
+                           recall_Lp = case tp_Lp + fn_Lp > 0 of
+                                         True -> fromIntegral tp_Lp / (fromIntegral (tp_Lp + fn_Lp))
+                                         False -> 0.0
+                           recall_Rp = case tp_Rp + fn_Rp > 0 of
+                                         True -> fromIntegral tp_Rp / (fromIntegral (tp_Rp + fn_Rp))
+                                         False -> 0.0
+                           recall_Noth = case tp_Noth + fn_Noth > 0 of
+                                           True -> fromIntegral tp_Noth / (fromIntegral (tp_Noth + fn_Noth))
+                                           False -> 0.0
+
+                           f1Score_Lp = case precision_Lp + recall_Lp > 0 of
+                                          True -> 2 * precision_Lp * recall_Lp / (precision_Lp + recall_Lp)
+                                          False -> 0.0
+                           f1Score_Rp = case precision_Rp + recall_Rp > 0 of
+                                          True -> 2 * precision_Rp * recall_Rp / (precision_Rp + recall_Rp)
+                                          False -> 0.0
+                           f1Score_Noth = case precision_Noth + recall_Noth > 0 of
+                                            True -> 2 * precision_Noth * recall_Noth / (precision_Noth + recall_Noth)
+                                            False -> 0.0
+
+                           macro_avg_precision = (precision_Lp + precision_Rp + precision_Noth) / 3
+                           macro_avg_recall = (recall_Lp + recall_Rp + recall_Noth) / 3
+                           macro_avg_f1Score = (f1Score_Lp + f1Score_Rp + f1Score_Noth) / 3
+
+                           n_Lp = fromIntegral (tp_Lp + fn_Lp)
+                           n_Rp = fromIntegral (tp_Rp + fn_Rp)
+                           n_Noth = fromIntegral (tp_Noth + fn_Noth)
+
+                           weighted_avg_precision = (n_Lp * precision_Lp + n_Rp * precision_Rp + n_Noth * precision_Noth) / (fromIntegral total :: Double)
+                           weighted_avg_recall = (n_Lp * recall_Lp + n_Rp * recall_Rp + n_Noth * recall_Noth) / (fromIntegral total :: Double)
+                           weighted_avg_f1Score = (n_Lp * f1Score_Lp + n_Rp * f1Score_Rp + n_Noth * f1Score_Noth) / (fromIntegral total :: Double)
+
+                       putStrLn "\n====【完整测试集正式评估结果】===="
+                       putStrLn $ "测试集平均损失：" ++ show totalLoss
+                       putStrLn $ "正确样本数：" ++ show correct ++ " / " ++ show total
+                       putStrLn $ "测试集准确率：" ++ show acc
+
+                       putStrLn "\n====【分类别的完整评估指标】===="
+                       putStrLn $ "  [(pred, label)]: " ++ show predPairs
+
+                       putStrLn $ "  tp_Lp: " ++ show tp_Lp ++ ", tp_Rp: " ++ show tp_Rp ++ ", tp_Noth: " ++ show tp_Noth
+                       putStrLn $ "  fn_Lp: " ++ show fn_Lp ++ ", fn_Rp: " ++ show fn_Rp ++ ", fn_Noth: " ++ show fn_Noth
+                       putStrLn $ "  fp_Lp: " ++ show fp_Lp ++ ", fp_Rp: " ++ show fp_Rp ++ ", fp_Noth: " ++ show fp_Noth
+                       putStrLn $ "  precision_Lp: " ++ (printf "%.4f" precision_Lp) ++ ", precision_Rp: " ++ (printf "%.4f" precision_Rp) ++ ", precision_Noth: " ++ (printf "%.4f" precision_Noth)
+                       putStrLn $ "  recall_Lp: " ++ (printf "%.4f" recall_Lp) ++ ", recall_Rp: " ++ (printf "%.4f" recall_Rp) ++ ", recall_Noth: " ++ (printf "%.4f" recall_Noth)
+                       putStrLn $ "  f1Score_Lp: " ++ (printf "%.4f" f1Score_Lp) ++ ", f1Score_Rp: " ++ (printf "%.4f" f1Score_Rp) ++ ", f1Score_Noth: " ++ (printf "%.4f" f1Score_Noth)
+                       putStrLn $ "  macro_avg_precision: " ++ (printf "%.4f" macro_avg_precision) ++ ", macro_avg_recall: " ++ (printf "%.4f" macro_avg_recall) ++ ", macro_avg_f1Score: " ++ (printf "%.4f" macro_avg_f1Score)
+                       putStrLn $ "  weighted_avg_precision: " ++ (printf "%.4f" weighted_avg_precision) ++ ", weighted_avg_recall: " ++ (printf "%.4f" weighted_avg_recall) ++ ", weighted_avg_f1Score: " ++ (printf "%.4f" weighted_avg_f1Score)
+                 else putStrLn "Cancelled."
     else putStrLn "Cancelled."

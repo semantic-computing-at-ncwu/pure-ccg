@@ -19,6 +19,7 @@ script_source:corpus_pccg_manual
 # tree_source:treebank_including_SLR_CL_seman
 # tree_source:corpus_pccg_manual
 # tree_source:treebank_by_script_with_semantics_not_reductive_20260129
+# tree_source:corpus
 tree_source:corpus_pccg_manual
 
 # Field storing parsing tree, default value of which is 'tree'.
@@ -104,11 +105,6 @@ decay_subtree_kernel:0.8
 # Range of serial numbers of sentences from which the used syntax ambiguity resolution model samples are.
 syntax_resol_sample_startsn:1
 syntax_resol_sample_endsn:350
-
-# Index number range of the used syntax ambiguity resolution model samples.
-# Number of samples in stru_gene3a0s_20260817 is 13857.
-syntax_resol_sample_startId:1
-syntax_resol_sample_endId:10
 
 # Algo. of pruning in resolving syntactic ambiguity.
 prune_algo:NoDemandPhrase
@@ -283,10 +279,20 @@ dim_hidden:64
 lr:0.008
 
 # Epochs in training Neural Network
-epochs:800
+epochs:2000
 
 # Size of one sample batch
 batchSize:64
 
 # Early stop patience in training Neural Network
-earlyStopPatience:5
+earlyStopPatience:10
+
+# Index number range of the used syntax ambiguity resolution model samples.
+# Number of samples in stru_gene3a0s_20260817 is 13857.
+syntax_resol_sample_startId:1
+syntax_resol_sample_endId:4000
+
+# Leaf node uses embedding semantics or not.
+# False: Not use embedding vector.
+# True: Use embedding vector.
+leafUsingEmbVec:True
