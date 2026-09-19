@@ -276,10 +276,10 @@ dim_proj:64
 dim_hidden:64
 
 # Learning rate for Neural Network
-lr:0.008
+lr:0.004
 
 # Epochs in training Neural Network
-epochs:2000
+epochs:1000
 
 # Size of one sample batch
 batchSize:64
@@ -290,7 +290,7 @@ earlyStopPatience:10
 # Index number range of the used syntax ambiguity resolution model samples.
 # Number of samples in stru_gene3a0s_20260817 is 13857.
 syntax_resol_sample_startId:1
-syntax_resol_sample_endId:4000
+syntax_resol_sample_endId:2000
 
 # Leaf node uses embedding semantics or not.
 # False: Not use embedding vector.
