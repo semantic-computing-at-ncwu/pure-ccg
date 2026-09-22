@@ -34,6 +34,7 @@ module Utils (
     sth8,          -- (a,b,c,d,e,f,g,h) -> f
     svt8,          -- (a,b,c,d,e,f,g,h) -> g
     eth8,          -- (a,b,c,d,e,f,g,h) -> g
+    initTuple6,    -- (a,b,c,d,e,f) -> (a,b,c,d,e)
     removeDup,     -- Eq a => [a] -> [a]
     removeDup',    -- Eq a => [a] -> [a] -> [a]
     removeTuple,   -- Eq a => [(a,a)] -> [(a,a)]
@@ -241,6 +242,10 @@ svt8 (_,_,_,_,_,_,g,_) = g
 
 eth8 :: (a,b,c,d,e,f,g,h) -> h
 eth8 (_,_,_,_,_,_,_,h) = h
+
+-- Take elements from a six-tuple except the last to form a five-tuple.
+initTuple6 :: (a,b,c,d,e,f) -> (a,b,c,d,e)
+initTuple6 (a,b,c,d,e,_) = (a,b,c,d,e)
 
 {- Remove duplicate elements in a list.
  - Actually, Data.List.nub is better than the following removeDup series of functions.

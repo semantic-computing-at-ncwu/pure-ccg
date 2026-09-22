@@ -58,7 +58,9 @@ tree_target:treebank_by_script_with_semantics_not_reductive_20260817
 phrasyn_model:phrasyn0
 
 # Syntax ambiguity resolution model also is the name of MySQL table storing the samples of that model.
-# Model 'stru_gene_202412' is the newest one in StruGene series.
+# Model 'stru_gene_202412' is for StruGene0 = (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType, Prior).
+# Model 'stru_gene_202501' is for StruGene = (LeftExtend, LeftOver, RightOver, RightExtend, OverType, Prior).
+# Model 'stru_gene3a0s_20260817' is for StruGene3a0s = (((LeftOverTree0, Seman), (RightOverTree0, Seman)), [ClauTagPrior])
 # When parsing by scripts, the samples of selected model would be created.
 # Possible values of this property:
 #   - stru_gene
@@ -72,7 +74,7 @@ phrasyn_model:phrasyn0
 #   - stru_gene3a_phrasyn0_202509
 #   - stru_gene3a_phrasyn0_20260129
 #   - stru_gene3a0s_20260817
-syntax_ambig_resol_model:stru_gene3a0s_20260817
+syntax_ambig_resol_model:stru_gene_phrasyn0_clcg_20260922
 
 # Category ambiguity resolution model also is the name of MySQL table storing the samples of that model.
 # Possible values of this property:
@@ -80,13 +82,13 @@ syntax_ambig_resol_model:stru_gene3a0s_20260817
 #   - slr_corpus_20260129
 cate_ambig_resol_model:slr_corpus_20260817
 
-# Switch of updating syntax or category ambiguity resolution samples in database.
+# Switch of updating parsing tree, syntax or category ambiguity resolution samples in database.
 # For grammar inconsistancy, parsing by scripts sometimes includes manually ambiguity resolution, using new category conversion rules or syntax rules.
 # On another aspects, resolution policies might be different between parsing by scripts and parsing manually.
 # So, parsing by scripts might change syntax or category ambiguity resolution samples coming from a same sentence.
 # When NOT hope to update syntax or category ambiguity resolution samples in database, set this switch as Off.
 # Now, category ambiguity resolution model SLR samples are stored with treebank created by parsing with scripts.
-# Switch category_ambig_resol_sample_update_switch is NOT used at present.
+tree_target_update_switch:Off
 syntax_ambig_resol_sample_update_switch:On
 category_ambig_resol_sample_update_switch:Off
 

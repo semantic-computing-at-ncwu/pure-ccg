@@ -9,12 +9,17 @@
 
 module Clustering (
     distPhraSynByIdentity,     -- PhraSyn -> PhraSyn -> Double
+    distPhraSyn0ByIdentity,   -- PhraSyn0 -> PhraSyn0 -> Double
     distPhraSynSetByIdentity,  -- [PhraSyn] -> [PhraSyn] -> Double
+    distPhraSyn0SetByIdentity, -- [PhraSyn0] -> [PhraSyn0] -> Double
     distVect4StruGeneByIdentity,         -- StruGene -> StruGene -> [Double]
+    distVect4StruGene0ByIdentity,        -- StruGene0 -> StruGene0 -> [Double]
     distVect4ContextOfSGByIdentity,      -- ContextOfSG -> ContextOfSG -> [Double]
+    distVect4Context0OfSGByIdentity,     -- Context0OfSG -> Context0OfSG -> [Double]
     DistWeiRatioList,          -- [Int], namely [wle, wlo, wro, wre, wot, wpr]
     dist4StruGeneByWeightSum,  -- StruGene -> StruGene -> DistWeiRatioList -> Double
     dist4ContextOfSGByWeightSum,         -- ContextOfSG -> ContextOfSG -> DistWeiRatioList -> Double
+    dist4Context0OfSGByWeightSum,        -- Context0OfSG -> Context0OfSG -> DistWeiRatioList -> Double
     dist4StruGeneByArithMean,  -- StruGene -> StruGene -> Double
     StruGene,                  -- (LeftExtend, LeftOver, RightOver, RightExtend, OverType, Prior)
     getKModeByMaxMinPoint,     -- [StruGeneSample] -> [StruGeneSample] -> Map.Map SIdx Double -> Int -> [StruGene]
@@ -179,6 +184,19 @@ distPhraSynByIdentity (ca1, ta1, ps1, sp1) (ca2, ta2, ps2, sp2) = sum [v1, v2, v
            True -> 0
            False -> 1
 
+distPhraSyn0ByIdentity :: PhraSyn0 -> PhraSyn0 -> Double
+distPhraSyn0ByIdentity (ca1, ta1, ps1) (ca2, ta2, ps2) = sum [v1, v2, v3] / 3.0
+    where
+    v1 = case ca1 == ca2 of
+           True -> 0
+           False -> 1
+    v2 = case ta1 == ta2 of
+           True -> 0
+           False -> 1
+    v3 = case ps1 == ps2 of
+           True -> 0
+           False -> 1
+
 {- Calculate the distance between two phrase sets by element pairing between two sets.
  - Phrase set P = [p1, p2, ..., pn], phrase set Q = [q1, q2, ..., qm]
  - sim(pi, pj) = 1 - (distPhraSynByIdentity pi qj)
@@ -193,6 +211,16 @@ distPhraSynSetByIdentity ps qs = 1 - (getPhraSynSetSim ps qs phraSynPair2SimMap)
                                           True -> (pi, qj)
                                           False -> (qj, pi)
                                         , 1 - (distPhraSynByIdentity pi qj)) | pi <- ps, qj <- qs]  -- [((pi,qj),sim(pi,qj))]
+
+{- Version for PhraSyn0 of function 'distPhraSynSetByIdentity'.
+ -}
+distPhraSyn0SetByIdentity :: [PhraSyn0] -> [PhraSyn0] -> Double
+distPhraSyn0SetByIdentity ps qs = 1 - (getPhraSyn0SetSim ps qs phraSyn0Pair2SimMap)
+    where
+    phraSyn0Pair2SimMap = Map.fromList [(case (pi <= qj) of                      -- Map (pi, qj) Sim, where pi <= qj.
+                                          True -> (pi, qj)
+                                          False -> (qj, pi)
+                                        , 1 - (distPhraSyn0ByIdentity pi qj)) | pi <- ps, qj <- qs]  -- [((pi,qj),sim(pi,qj))]
 
 {- The distance vector between two samples of model StruGene.
  - For ambiguity model StruGene = (LeftExtend, LeftOver, RightOver, RightExtend, OverType, Prior), the distance vector is obtained by following function.
@@ -212,6 +240,24 @@ distVect4StruGeneByIdentity s1 s2 = [d1, d2, d3, d4, d5, d6]
             True -> 0.0
             False -> 1.0
 
+{- The distance vector between two samples of model StruGene0.
+ - For ambiguity model StruGene0 = (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType, Prior), the distance vector is obtained by following function.
+ - Elements in distance vector all are in [0, 1].
+ -}
+distVect4StruGene0ByIdentity :: StruGene0 -> StruGene0 -> [Double]
+distVect4StruGene0ByIdentity s1 s2 = [d1, d2, d3, d4, d5, d6]
+    where
+    d1 = distPhraSyn0SetByIdentity (fst6 s1) (fst6 s2)
+    d2 = distPhraSyn0ByIdentity (snd6 s1) (snd6 s2)
+    d3 = distPhraSyn0ByIdentity (thd6 s1) (thd6 s2)
+    d4 = distPhraSyn0SetByIdentity (fth6 s1) (fth6 s2)
+    d5 = case fif6 s1 == fif6 s2 of
+            True -> 0.0
+            False -> 1.0
+    d6 = case sth6 s1 == sth6 s2 of
+            True -> 0.0
+            False -> 1.0
+
 {- The distance vector between two StruGene contexts or two StruGene2 contexts.
  - ContextOfSG :: (LeftExtend, LeftOver, RightOver, RightExtend, OverType), the distance vector is obtained by following function.
  - Elements in distance vector all are in [0, 1].
@@ -223,6 +269,21 @@ distVect4ContextOfSGByIdentity c1 c2 = [d1, d2, d3, d4, d5]
     d2 = distPhraSynByIdentity (snd5 c1) (snd5 c2)
     d3 = distPhraSynByIdentity (thd5 c1) (thd5 c2)
     d4 = distPhraSynSetByIdentity (fth5 c1) (fth5 c2)
+    d5 = case fif5 c1 == fif5 c2 of
+            True -> 0.0
+            False -> 1.0
+
+{- The distance vector between two StruGene0 contexts.
+ - Context0OfSG :: (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType), the distance vector is obtained by following function.
+ - Elements in distance vector all are in [0, 1].
+ -}
+distVect4Context0OfSGByIdentity :: Context0OfSG -> Context0OfSG -> [Double]
+distVect4Context0OfSGByIdentity c1 c2 = [d1, d2, d3, d4, d5]
+    where
+    d1 = distPhraSyn0SetByIdentity (fst5 c1) (fst5 c2)
+    d2 = distPhraSyn0ByIdentity (snd5 c1) (snd5 c2)
+    d3 = distPhraSyn0ByIdentity (thd5 c1) (thd5 c2)
+    d4 = distPhraSyn0SetByIdentity (fth5 c1) (fth5 c2)
     d5 = case fif5 c1 == fif5 c2 of
             True -> 0.0
             False -> 1.0
@@ -249,6 +310,16 @@ dist4ContextOfSGByWeightSum :: ContextOfSG -> ContextOfSG -> DistWeiRatioList ->
 dist4ContextOfSGByWeightSum c1 c2 distWeiRatioList = sum distList / fromIntegral ratioTotal
     where
     distList = map (\x -> fromIntegral (fst x) * snd x) $ zip distWeiRatioList $ distVect4ContextOfSGByIdentity c1 c2
+    ratioTotal = sum distWeiRatioList
+
+{- Calculate distance between contexts of two StruGene0 samples.
+ - (1) Weightedly sum distances only on StruGene0 context components;
+ - (2) Normalize to range [0, 1].
+ -}
+dist4Context0OfSGByWeightSum :: Context0OfSG -> Context0OfSG -> DistWeiRatioList -> Double
+dist4Context0OfSGByWeightSum c1 c2 distWeiRatioList = sum distList / fromIntegral ratioTotal
+    where
+    distList = map (\x -> fromIntegral (fst x) * snd x) $ zip distWeiRatioList $ distVect4Context0OfSGByIdentity c1 c2
     ratioTotal = sum distWeiRatioList
 
 {- Arithmetically meaned distance between two StruGenes.

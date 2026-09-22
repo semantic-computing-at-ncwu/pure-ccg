@@ -1245,9 +1245,10 @@ parseSentByScript sn cs = do
     hSetBuffering stdin LineBuffering                  -- Open input buffering
     confInfo <- readFile "Configuration"
     let script_source = getConfProperty "script_source" confInfo                -- Script source
-    let tree_source = getConfProperty "tree_source" confInfo                    -- Tree source
-    let tree_target = getConfProperty "tree_target" confInfo                    -- auto sample target
-    let syntax_ambig_resol_sample_update_switch = getConfProperty "syntax_ambig_resol_sample_update_switch" confInfo
+        tree_source = getConfProperty "tree_source" confInfo                    -- Tree source
+        tree_target = getConfProperty "tree_target" confInfo                    -- auto sample target
+        tree_target_update_switch = getConfProperty "tree_target_update_switch" confInfo
+        syntax_ambig_resol_sample_update_switch = getConfProperty "syntax_ambig_resol_sample_update_switch" confInfo
 
     conn <- getConn
     let sqlstat = DS.fromString $ "create table if not exists " ++ tree_target
@@ -1305,26 +1306,27 @@ parseSentByScript sn cs = do
         let clauIndices = map fst newTree                                       -- [ClauIdx]
         let newSemanComb = zip clauIndices terms                                -- [(ClauIdx, Term)]
 
-        let query = DS.fromString ("select serial_num from " ++ tree_target ++ " where serial_num = ?")
-        stmt <- prepareStmt conn query
-        (defs, is) <- queryStmt conn stmt [toMySQLInt32 sn]
-        rows <- S.toList is
-        if rows == []
+        if tree_target_update_switch == "On"
           then do
-            let query = DS.fromString ("insert into " ++ tree_target ++ " set serial_num = ?, tree = ?, script = ?, seman_comb = ?, SLR = ?, tagClause = ?")
+            let query = DS.fromString ("select serial_num from " ++ tree_target ++ " where serial_num = ?")
             stmt <- prepareStmt conn query
-            ok <- executeStmt conn stmt [toMySQLInt32 sn, toMySQLText (nTreeToString newTree), toMySQLText (nScriptToString newScript), toMySQLText (nClauSemanCombToString newSemanComb), toMySQLText (nClauseSLRToString (snd5 finFlagAndSLRAndTree)), toMySQLText (show tagOfClauAnaly)]
-            let rn = getOkAffectedRows ok
-            putStrLn $ "parseSentByScript: " ++ show rn ++ " row(s) were inserted in " ++ tree_target ++ "."
-            close conn
-          else do
-            let sqlstat = DS.fromString $ "update " ++ tree_target ++ " set tree = ?, script = ?, seman_comb = ?, SLR = ?, tagClause = ? where serial_num = ?"
-            stmt <- prepareStmt conn sqlstat
-            ok <- executeStmt conn stmt [toMySQLText (nTreeToString newTree), toMySQLText (nScriptToString newScript), toMySQLText (nClauSemanCombToString newSemanComb), toMySQLText (nClauseSLRToString (snd5 finFlagAndSLRAndTree)), toMySQLText (show tagOfClauAnaly), toMySQLInt32 sn]
-            let rn = getOkAffectedRows ok
-            putStrLn $ "parseSentByScript: " ++ show rn ++ " row(s) were updated in " ++ tree_target ++ "."
-            close conn
-
+            (defs, is) <- queryStmt conn stmt [toMySQLInt32 sn]
+            rows <- S.toList is
+            if rows == []
+              then do
+                let query = DS.fromString ("insert into " ++ tree_target ++ " set serial_num = ?, tree = ?, script = ?, seman_comb = ?, SLR = ?, tagClause = ?")
+                stmt <- prepareStmt conn query
+                ok <- executeStmt conn stmt [toMySQLInt32 sn, toMySQLText (nTreeToString newTree), toMySQLText (nScriptToString newScript), toMySQLText (nClauSemanCombToString newSemanComb), toMySQLText (nClauseSLRToString (snd5 finFlagAndSLRAndTree)), toMySQLText (show tagOfClauAnaly)]
+                let rn = getOkAffectedRows ok
+                putStrLn $ "parseSentByScript: " ++ show rn ++ " row(s) were inserted in " ++ tree_target ++ "."
+              else do
+                let sqlstat = DS.fromString $ "update " ++ tree_target ++ " set tree = ?, script = ?, seman_comb = ?, SLR = ?, tagClause = ? where serial_num = ?"
+                stmt <- prepareStmt conn sqlstat
+                ok <- executeStmt conn stmt [toMySQLText (nTreeToString newTree), toMySQLText (nScriptToString newScript), toMySQLText (nClauSemanCombToString newSemanComb), toMySQLText (nClauseSLRToString (snd5 finFlagAndSLRAndTree)), toMySQLText (show tagOfClauAnaly), toMySQLInt32 sn]
+                let rn = getOkAffectedRows ok
+                putStrLn $ "parseSentByScript: " ++ show rn ++ " row(s) were updated in " ++ tree_target ++ "."
+          else putStr ""
+        close conn
         putStrLn $ "tagOfClauAnaly = " ++ show tagOfClauAnaly
         putStrLn $ "Sentence No."++ show sn ++" has "++ show (length origTrees) ++" clauses, in which "++ show ((fst . fif5) finFlagAndSLRAndTree) ++ " clauses are the same with the origial clauses."
         if fst3 tagOfClauAnaly /= snd3 tagOfClauAnaly
@@ -2975,12 +2977,7 @@ syntaxAmbiResolByManualResol' nPCs (lp, rp) = do
         let context = [x | x <- nPCs, x /= lp, x /= rp]        -- Get context of the pair of overlapping phrases
         putStr "Find a fragment of No.1 ambiguity model: "
         showAmbiModel1Frag lp rp context ot
-      "stru_gene" -> do
-        let leps = getPhraByEnd (stOfCate lp - 1) nPCs        -- Get all left-extend phrases
-        let reps = getPhraByStart (enOfCate rp + 1) nPCs      -- Get all right-entend phrases
-        putStr "Find structural fragment: "
-        showStruFrag leps lp rp reps ot
-      x | elem x ["stru_gene_202408", "stru_gene_202412", "stru_gene_202501"] -> do        -- Multimodel
+      x | isPrefixOf "stru_gene_" x -> do                     -- "stru_gene_202408", "stru_gene_202412", "stru_gene_202501", "stru_gene_phrasyn0_clcg_20260922"
         let leps = getPhraByEnd (stOfCate lp - 1) nPCs        -- Get all left-extend phrases
         let reps = getPhraByStart (enOfCate rp + 1) nPCs      -- Get all right-entend phrases
         putStr "Find structural fragment: "
@@ -3034,10 +3031,12 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
     let leftOverTrees = findAllTree leftOver nPCs                   -- [BiTree PhraCate]
     let rightOverTrees = findAllTree rightOver nPCs                 -- [BiTree PhraCate]
 
+    putStrLn $ " updateSyntaxAmbiResolSample': Num. of leftOverTrees = " ++ show (length leftOverTrees) ++ ", Num. of rightOverTrees = " ++ show (length rightOverTrees)
+
     forM_ [(lt, rt) | lt <- leftOverTrees, rt <- rightOverTrees] $ \(leftOverTree, rightOverTree) -> do
       case syntax_ambig_resol_model of
         x | isPrefixOf "stru_gene3a0s_" x  -> do                    -- Multimodel
-
+          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene3a0s_'"
           let lot = phraCateTree2PhraSyn0Tree leftOverTree          -- BiTree PhraSyn0
               rot = phraCateTree2PhraSyn0Tree rightOverTree         -- BiTree PhraSyn0
               lotv = doubleBackSlash (show lot)       -- Convert BiTree Syntax0 into String, and double backward slashes.
@@ -3047,7 +3046,6 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               rosv = (seOfCate rightOver)!!0                    -- Seman, having apostrophe.
               lost = (biTreeEqualsWithTerm . getTermFromStr . seman2SynSeman) losv     -- BiTree Term
               rost = (biTreeEqualsWithTerm . getTermFromStr . seman2SynSeman) rosv     -- BiTree Term
-
 
           if not (isIsomorphic lot lost)
             then putStrLn $ " Not isomorphic: clauTag: " ++ show clauTag ++ ", lot: " ++ show lot ++ ", lost: " ++ show lost ++ ", nPCs: " ++ show nPCs
@@ -3113,7 +3111,7 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               close conn
 
         x | isPrefixOf "stru_gene3a_phrasyn0_" x  -> do               -- Multimodel
-
+          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene3a_phrasyn0_'"
           let lot = phraCateTree2PhraSyn0Tree leftOverTree      -- BiTree PhraSyn0
               rot = phraCateTree2PhraSyn0Tree rightOverTree     -- BiTree PhraSyn0
               lotv = doubleBackSlash (show lot)                 -- Convert BiTree Syntax0 into String, and double backward slashes.
@@ -3177,8 +3175,8 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               closeStmt conn stmt1
               close conn
 
-        x | elem x ["stru_gene3a_202508"] -> do                 -- Multimodel
-
+        x | isPrefixOf "stru_gene3a_" x -> do                  -- Multimodel
+          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene3a_'"
           let lot = phraCateTree2PhraSynTree leftOverTree      -- BiTree PhraSyn
               rot = phraCateTree2PhraSynTree rightOverTree     -- BiTree PhraSyn
               lotv = doubleBackSlash (show lot)                -- Convert BiTree Syntax into String, and double backward slashes.
@@ -3242,7 +3240,8 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               closeStmt conn stmt1
               close conn
 
-        x | elem x ["stru_gene3_202508"] -> do                 -- Multimodel
+        x | isPrefixOf "stru_gene3_" x -> do                    -- Multimodel
+          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene3_'"
           let leftExtend = getPhraByEnd (stOfCate leftOver - 1) nPCs          -- Get all left-extend phrases
               rightExtend = getPhraByStart (enOfCate rightOver + 1) nPCs      -- Get all right-entend phrases
 
@@ -3323,7 +3322,8 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               closeStmt conn stmt1
               close conn
 
-        x | elem x ["stru_gene_202408" , "stru_gene_202412", "stru_gene_202501"] -> do      -- Multimodel
+        x | isPrefixOf "stru_gene_" x  -> do               -- "stru_gene_202408", "stru_gene_202412", "stru_gene_202501", "stru_gene_20260922"
+          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene_'"
           let leftExtend = getPhraByEnd (stOfCate leftOver - 1) nPCs          -- Get all left-extend phrases
               rightExtend = getPhraByStart (enOfCate rightOver + 1) nPCs      -- Get all right-entend phrases
 
@@ -3401,6 +3401,7 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               close conn                                   -- Close MySQL connection.
 
         "stru_gene" -> do
+          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene'"
           let leftExtend = getPhraByEnd (stOfCate leftOver - 1) nPCs          -- Get all left-extend phrases
               rightExtend = getPhraByStart (enOfCate rightOver + 1) nPCs      -- Get all right-entend phrases
 
@@ -3462,6 +3463,7 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               close conn                                   -- Close MySQL connection.
 
         "ambi_resol1" -> do
+          putStrLn " updateSyntaxAmbiResolSample': Match 'ambi_resol1'"
           let context =  sortPhraCateBySpan [x | x <- nPCs, x /= leftOver, x /= rightOver]     -- Get context for ambiguity resolution, which is sorted by increasing phrasal spans.
               lpv = replace "'" "''" $ doubleBackSlash (getPhraCate_String leftOver)
               rpv = replace "'" "''" $ doubleBackSlash (getPhraCate_String rightOver)

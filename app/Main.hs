@@ -370,25 +370,27 @@ doParseSentByScript :: String -> IO ()
 doParseSentByScript username = do
     confInfo <- readFile "Configuration"
     let script_source = getConfProperty "script_source" confInfo                     -- Script source
-    let tree_source = getConfProperty "tree_source" confInfo                         -- Tree source
-    let tree_target = getConfProperty "tree_target" confInfo                         -- Tree target
-    let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
-    let cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
-    let syntax_ambig_resol_sample_update_switch = getConfProperty "syntax_ambig_resol_sample_update_switch" confInfo
-    let category_ambig_resol_sample_update_switch = getConfProperty "category_ambig_resol_sample_update_switch" confInfo
+        tree_source = getConfProperty "tree_source" confInfo                         -- Tree source
+        tree_target = getConfProperty "tree_target" confInfo                         -- Tree target
+        syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+        cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
+        tree_target_update_switch = getConfProperty "tree_target_update_switch" confInfo
+        syntax_ambig_resol_sample_update_switch = getConfProperty "syntax_ambig_resol_sample_update_switch" confInfo
+        category_ambig_resol_sample_update_switch = getConfProperty "category_ambig_resol_sample_update_switch" confInfo
 
     putStrLn $ " script_source: " ++ script_source
     putStrLn $ " tree_source: " ++ tree_source
     putStrLn $ " tree_target: " ++ tree_target
     putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
     putStrLn $ " cate_ambig_resol_model: " ++ cate_ambig_resol_model
+    putStrLn $ " tree_target_update_switch: " ++ tree_target_update_switch
     putStrLn $ " syntax_ambig_resol_sample_update_switch: " ++ syntax_ambig_resol_sample_update_switch
     putStrLn $ " category_ambig_resol_sample_update_switch: " ++ category_ambig_resol_sample_update_switch
 
     contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
     if contOrNot == "c"
       then do
-        contOrNot2 <- getLineUntil ("Targets will be updated. Continuing or not [c/n] (RETURN for 'n'): ") ["c","n"] False
+        contOrNot2 <- getLineUntil (" Please confirm again continuing or not? [c/n] (RETURN for 'n'): ") ["c","n"] False
         if contOrNot2 == "c"
           then do
             putStr "Please input serial_num of start sentence: "

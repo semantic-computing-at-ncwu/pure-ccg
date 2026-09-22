@@ -12,18 +12,28 @@ module AmbiResol (
     nullPhraSyn,         -- (Nil, "", "", -1)
     nullPhraSyn1,        -- (Nil, "", "", "", -1)
     SIdx,                -- Int
-    LeftExtend,          -- [(Category, Tag, PhraStru, Span)]
-    LeftOver,            -- (Category, Tag, PhraStru, Span)
-    RightOver,           -- (Category, Tag, PhraStru, Span)
-    RightExtend,         -- [(Category, Tag, PhraStru, Span)]
+    LeftExtend,          -- [PhraSyn]
+    LeftExtend0,         -- [PhraSyn0]
+    LeftOver,            -- PhraSyn
+    LeftOver0,           -- PhraSyn0
+    RightOver,           -- PhraSyn
+    RightOver0,          -- PhraSyn0
+    RightExtend,         -- [PhraSyn]
+    RightExtend0,        -- [PhraSyn0]
     ContextOfOT,         -- (LeftExtend, LeftOver, RightOver, RightExtend)
+    Context0OfOT,        -- (LeftExtend0, LeftOver0, RightOver0, RightExtend0)
     Context2OverType,    -- (ContextOfOT, OverType)
+    Context02OverType,   -- (Context0OfOT, OverType)
     Context2OverTypeBase,       -- [Context2OverType]
+    Context02OverTypeBase,      -- [Context02OverType]
     nullContextOfOT,     -- ContextOfOT
+    nullContext0OfOT,    -- Context0OfOT
+
     OverType,            -- Int
     Prior(..),           -- Prior and its all Constructors
     SIdxPrior,           -- (SIdx, Prior)
     ContextOfSG,         -- (LeftExtend, LeftOver, RightOver, RightExtend, OverType)
+    Context0OfSG,        -- (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType)
     ClauTag,             -- (SentIdx, ClauIdx)
     ClauTagPrior,        -- (ClauTag, Prior)
     stringToCTPListList,        -- String -> [[ClauTagPrior]]
@@ -48,12 +58,17 @@ module AmbiResol (
     hasSentSampleInSynAmbiResol,    -- SentIdx -> ClauIdx -> ClauIdx -> IO Bool
     removeClauTagPriorFromSynAmbiResol,     -- SentIdx -> ClauIdx -> ClauIdx -> IO ()
     Context2ClauTagPrior,       -- (ContextOfSG, [ClauTagPrior])
+    Context02ClauTagPrior,      -- (Context0OfSG, [ClauTagPrior])
     Context2ClauTagPriorBase,   -- [Context2ClauTagPrior]
+    Context02ClauTagPriorBase,  -- [Context02ClauTagPrior]
     StruGene,            -- (LeftExtend, LeftOver, RightOver, RightExtend, OverType, Prior)
-    getContextFromStruGene,     -- StruGene -> ContextOfSG
+    StruGene0,           -- (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType, Prior)
     StruGeneSample,      -- (SIdx, LeftExtend, LeftOver, RightOver, RightExtend, OverType, Prior)
-    nullStruGeneSample,  -- StruGeneSample
+    StruGene0Sample,     -- (SIdx, LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType, Prior)
     nullStruGene,        -- StruGene
+    nullStruGene0,       -- StruGene0
+    nullStruGeneSample,  -- StruGeneSample
+    nullStruGene0Sample,  -- StruGene0Sample
     OverPair,            -- (PhraCate, PhraCate, Prior)
     OverPairid,          -- (PhraCate, PhraCate, Prior, SIdx)
     LeftPhra,            -- PhraCate
@@ -85,7 +100,9 @@ module AmbiResol (
     nPhraSyn1ToString,   -- [PhraSyn1] -> String
     contextOfSGToString, -- ContextOfSG -> String
     struGeneToString,    -- StruGene -> String
+    struGene0ToString,   -- StruGene0 -> String
     nStruGeneToString,   -- [StruGene] -> String
+    nStruGene0ToString,  -- [StruGene0] -> String
     removeDup4OverPair,  -- [OverPair] -> [OverPair]
     hasDup4OverPair,     -- [OverPair] -> [OverPair]
     equal4OverPair,      -- OverPair -> OverPair -> Bool
@@ -94,7 +111,6 @@ module AmbiResol (
     readStreamByContext2OverType,      -- [Context2OverType] -> S.InputStream [MySQLValue] -> IO [Context2OverType]
     StruGene2,           -- (LeftExtend, LeftOver, RightOver, RightExtend, OverType, [ClauTagPrior])
     StruGene2Sample,     -- (SIdx, LeftExtend, LeftOver, RightOver, RightExtend, OverType, [ClauTagPrior])
-    getContextFromStruGene2,           -- StruGene2 -> ContextOfSG
     getContextFromStruGene2Sample,     -- StruGene2Sample -> ContextOfSG
     fromStruGene2ByHighestFreqPrior,   -- StruGene2 -> StruGene
     readStreamByContext2ClauTagPrior,  -- [Context2ClauTagPrior] -> S.InputStream [MySQLValue] -> IO [Context2ClauTagPrior]
@@ -232,9 +248,13 @@ nullPhraSyn1 = (Nil, "", "", "", -1)
  -}
 
 type LeftExtend = [PhraSyn]     -- Left neighbors
+type LeftExtend0 = [PhraSyn0]   -- Left neighbors
 type LeftOver = PhraSyn         -- Overlapping left phrase
+type LeftOver0 = PhraSyn0       -- Overlapping left phrase
 type RightOver = PhraSyn        -- Overlapping right phrase
+type RightOver0 = PhraSyn0      -- Overlapping right phrase
 type RightExtend = [PhraSyn]    -- Right neighbors
+type RightExtend0 = [PhraSyn0]  -- Right neighbors
 type OverType = Int             -- Overlapping type, [0 .. 5]
 data Prior = Lp | Rp | Noth deriving (Eq, Read, Generic)    -- Lp means left prior, Rp means right prior, Noth means nothing or both not.
 
@@ -265,10 +285,15 @@ instance Ord Prior where
 -- Using for K-Means clustering.
 type SIdxPrior = (SIdx, Prior)
 
--- Overtype context 'ContextOfOT', overtype and its context 'Context2OverType', and sample base of 'Context2OverType'.
+{- Overtype context 'ContextOfOT', overtype and its context 'Context2OverType', and sample base of 'Context2OverType'.
+   There exist these types for PhraSyn0, 'Context0OfOT', 'Context02OverType', and 'Context02OverTypeBase'.
+ -}
 type ContextOfOT = (LeftExtend, LeftOver, RightOver, RightExtend)
+type Context0OfOT = (LeftExtend0, LeftOver0, RightOver0, RightExtend0)
 type Context2OverType = (ContextOfOT, OverType)
+type Context02OverType = (Context0OfOT, OverType)
 type Context2OverTypeBase = [Context2OverType]
+type Context02OverTypeBase = [Context02OverType]
 
 {- Record which clauses select the ambiguity resolution policy (prior) under a certain stru_gene model context.
  - For a given context of stru-gene model sample, different clauses might select different resolution policies.
@@ -469,10 +494,15 @@ hasSentIdxInCTPList sentIdx (x:xs)
     | sentIdx == fst (fst x) = True
     | otherwise = hasSentIdxInCTPList sentIdx xs
 
--- Overtype context 'ContextOfSG', clause-tagged prior and its context 'Context2ClauTagPrior', and sample base of 'Context2ClauTagPrior'.
+{- Overtype context 'ContextOfSG', clause-tagged prior and its context 'Context2ClauTagPrior', and sample base of 'Context2ClauTagPrior'.
+   There exist corresponding types for PhraSyn0.
+  -}
 type ContextOfSG = (LeftExtend, LeftOver, RightOver, RightExtend, OverType)
+type Context0OfSG = (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType)
 type Context2ClauTagPrior = (ContextOfSG, [ClauTagPrior])
+type Context02ClauTagPrior = (Context0OfSG, [ClauTagPrior])
 type Context2ClauTagPriorBase = [Context2ClauTagPrior]
+type Context02ClauTagPriorBase = [Context02ClauTagPrior]
 
 {- Null value of ContextOfOT, used for calculating similarity between ContextOfOTs.
  - Similarity is zero between nullPhraSyn and any other PhraSyn value.
@@ -480,25 +510,38 @@ type Context2ClauTagPriorBase = [Context2ClauTagPrior]
 nullContextOfOT :: ContextOfOT
 nullContextOfOT = ([nullPhraSyn], nullPhraSyn, nullPhraSyn, [nullPhraSyn])
 
+{- Null value of Context0OfOT, used for calculating similarity between Context0OfOTs.
+ - Similarity is zero between nullPhraSyn0 and any other PhraSyn0 value.
+ -}
+nullContext0OfOT :: Context0OfOT
+nullContext0OfOT = ([nullPhraSyn0], nullPhraSyn0, nullPhraSyn0, [nullPhraSyn0])
+
 -- The following defines No.0 ambiguity resolution model, and the original samples of which are stored in table 'stru_gene' of database 'ccg4c'.
 type StruGene = (LeftExtend, LeftOver, RightOver, RightExtend, OverType, Prior)
+
+-- Version for PhraSyn0 of No.0 ambiguity resolution model.
+type StruGene0 = (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType, Prior)
 
 -- Null struture gene is just used as a place holder.
 nullStruGene :: StruGene
 nullStruGene = ([], nullPhraSyn, nullPhraSyn, [], -1, Noth)
 
+-- Null value of StruGene0
+nullStruGene0 :: StruGene0
+nullStruGene0 = ([], nullPhraSyn0, nullPhraSyn0, [], -1, Noth)
+
 -- Sample index, used in multiple sample bases.
 type SIdx = Int
 
--- Get ContextOfSG value from StruGene value.
-getContextFromStruGene :: StruGene -> ContextOfSG
-getContextFromStruGene struGene = (\x -> (fst6 x, snd6 x, thd6 x, fth6 x, fif6 x)) struGene
-
 -- Sample model of Syntax-Structural Genes, which has attribute Sample Index, named as SIdx.
 type StruGeneSample = (SIdx, LeftExtend, LeftOver, RightOver, RightExtend, OverType, Prior)
+type StruGene0Sample = (SIdx, LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType, Prior)
 
 nullStruGeneSample :: StruGeneSample
 nullStruGeneSample = (-1, [], nullPhraSyn, nullPhraSyn, [], -1, Noth)
+
+nullStruGene0Sample :: StruGene0Sample
+nullStruGene0Sample = (-1, [], nullPhraSyn0, nullPhraSyn0, [], -1, Noth)
 
 -- An overlapping pair of phrasal categories, including its priority assignment, used in clause parsing.
 type OverPair = (PhraCate, PhraCate, Prior)
@@ -735,9 +778,24 @@ struGeneToString sg = "(" ++ le ++ "," ++ lo ++ "," ++ re ++ "," ++ ro ++ "," ++
       ot = show (fif6 sg)
       pr = show (sth6 sg)
 
+-- Get the string of a StruGene0
+struGene0ToString :: StruGene0 -> String
+struGene0ToString sg = "(" ++ le ++ "," ++ lo ++ "," ++ re ++ "," ++ ro ++ "," ++ ot ++ "," ++ pr ++ ")"
+    where
+      le = nPhraSyn0ToString (fst6 sg)
+      lo = phraSyn0ToString (snd6 sg)
+      re = phraSyn0ToString (thd6 sg)
+      ro = nPhraSyn0ToString (fth6 sg)
+      ot = show (fif6 sg)
+      pr = show (sth6 sg)
+
 -- Get the string of [StruGene]
 nStruGeneToString :: [StruGene] -> String
 nStruGeneToString sgs = listToString (map struGeneToString sgs)
+
+-- Get the string of [StruGene0]
+nStruGene0ToString :: [StruGene0] -> String
+nStruGene0ToString sgs = listToString (map struGene0ToString sgs)
 
 -- Remove duplicate OverPair values in a list. When comparing two PhraCate values, attribue Act is NOT considered.
 removeDup4OverPair :: [OverPair] -> [OverPair]
@@ -800,10 +858,6 @@ readStreamByContext2OverType es is = do
  -}
 type StruGene2 = (LeftExtend, LeftOver, RightOver, RightExtend, OverType, [ClauTagPrior])
 type StruGene2Sample = (SIdx, LeftExtend, LeftOver, RightOver, RightExtend, OverType, [ClauTagPrior])
-
--- Get ContextOfSG value from StruGene2 value.
-getContextFromStruGene2 :: StruGene2 -> ContextOfSG
-getContextFromStruGene2 struGene2 = (\x -> (fst6 x, snd6 x, thd6 x, fth6 x, fif6 x)) struGene2
 
 -- Get ContextOfSG value from StruGene2Sample value.
 getContextFromStruGene2Sample :: StruGene2Sample -> ContextOfSG

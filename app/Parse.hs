@@ -1321,11 +1321,15 @@ findATree root clo
         mother = snd parent
 
 {- Find all syntactic trees with a given phrasal category as its root from the transitive closure of phrasal categories.
- - One such tree is defined as (Node r Empty Empty), where r is the root, and left and right subtrees wait for growing.
+ - Algo.:
+ -   (1) If the phrase is nil (nilPhra), return an empty tree ([Empty]);
+ -   (2) If the phrase is a word (span is 0), return a single-node tree ([Node PhraCate Empty Empty]);
+ -   (3) Otherwise, return 
  -}
 findAllTree :: PhraCate -> [PhraCate] -> [BiTree PhraCate]
 findAllTree root clo
     | root == nilPhra = [Empty]
+    | spOfCate root == 0 = [Node root Empty Empty]
     | otherwise = concat [ mkNode f m | (f, m) <- parents ]
       where
         parents = findSplitCate root clo  -- [(PhraCate, PhraCate)]
