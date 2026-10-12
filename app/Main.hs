@@ -12,6 +12,8 @@ import Control.Monad
 import qualified System.IO.Streams as S
 import qualified Data.Map as Map
 import Data.List (sort, isPrefixOf)
+import System.Random (randomRIO, mkStdGen, randomR, StdGen, newStdGen)
+import List.Shuffle (shuffle_)
 import Data.Maybe (fromMaybe)
 import Data.Tuple.Utils
 import System.IO
@@ -880,9 +882,10 @@ doExperiments username = do
     putStrLn " F -> Test Binary Tree LSTM for syntactic disambiguity in Module BiTreeLSTM"
     putStrLn " 10 -> Test the building of sample set in Module BiTreeLSTM"
     putStrLn " 11 -> Train Binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM"
+    putStrLn " 12 -> Evaluate syntactic disambiguation by sample with most similiar context"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","10","11","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","10","11","12","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -905,6 +908,7 @@ doExperiments username = do
                "F" -> doTestBiTreeLSTM username
                "10" -> doTestBuildSampleSetInBiTreeLSTM username
                "11" -> doTrainBiTreeLSTM username
+               "12" -> doEvalSyntaxDisambigBySampleWithMaxSim username
              doExperiments username                            -- Rear recursion
 
 {- B.1 Parse the sentence indicated by serial_num, here 'username' has not been used.
@@ -1353,6 +1357,196 @@ doTestBuildSampleSetInBiTreeLSTM username = do
 doTrainBiTreeLSTM :: String -> IO ()
 doTrainBiTreeLSTM username = testPipeline2
 
+{- B.12 Syntactic disambiguation by sample with most similiar context.
+   T0-Q-Q-WANG: Type 0 grammatical attribute identity
+   T0-X-Y-ZHAO: Type 0 grammatical attribute concurrence
+   T3-H-DONG: Type 3 overlapping tree with LeftExtend and RightExtend
+   T3a-H-DONG: Type 3a overlapping tree without LeftExtend and RightExtend
+   T3a0-H-DONG: Type 3a0 overlapping tree without LeftExtend and RightExtend, besides using PhraSyn0
+   T3a0s-Q-J-WANG: Type 3a0s overlapping tree without LeftExtend and RightExtend, besides using PhraSyn0 and logic semantics
+ -}
+doEvalSyntaxDisambigBySampleWithMaxSim :: String -> IO ()
+doEvalSyntaxDisambigBySampleWithMaxSim username = do
+    confInfo <- readFile "Configuration"
+    let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+        syntax_resol_sample_startId = getConfProperty "syntax_resol_sample_startId" confInfo
+        syntax_resol_sample_endId = getConfProperty "syntax_resol_sample_endId" confInfo
+        startId = read syntax_resol_sample_startId :: Int
+        endId = read syntax_resol_sample_endId :: Int
+        phrasyn_model = getConfProperty "phrasyn_model" confInfo
+        max_sim_contextofsg_algo = getConfProperty "max_sim_contextofsg_algo" confInfo
+        store_csg_sim = getConfProperty "store_csg_sim" confInfo
+        csg_sim_tbl = getConfProperty "csg_sim_tbl" confInfo
+
+    putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
+    putStrLn $ " syntax_resol_sample_startId: " ++ syntax_resol_sample_startId
+    putStrLn $ " syntax_resol_sample_endId: " ++ syntax_resol_sample_endId
+    putStrLn $ " phrasyn_model: " ++ phrasyn_model
+    putStrLn $ " max_sim_contextofsg_algo: " ++ max_sim_contextofsg_algo
+    putStrLn $ " store_csg_sim: " ++ store_csg_sim
+    putStrLn $ " csg_sim_tbl: " ++ csg_sim_tbl
+
+    let prompt = "Begin to evaluate syntactic disambiguation by most similir sample, are you sure? [y/n] (RETURN for 'y'): "
+    answer <- getLineUntil prompt ["y","n"] True
+
+    if answer == "y"
+      then do
+        predPairs
+          <- case max_sim_contextofsg_algo of
+               "T0-Q-Q-WANG" -> do                      -- StruGene0, WANG Qian-qian's method
+                 -- ========== 获取消岐样本 ==========
+                 conn <- getConn
+                 let sqlstat = DS.fromString $ "select id, leftExtend, leftOver, rightOver, rightExtend, overType, clauTagPrior from "
+                                                ++ syntax_ambig_resol_model ++ " where id >= ? && id <= ?"
+                 stmt <- prepareStmt conn sqlstat
+                 (defs, is) <- queryStmt conn stmt [toMySQLInt32U startId, toMySQLInt32U endId]
+                 struGene0Samples <- readStreamByStruGene0 [] is        -- [(SIdx, LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType, Prior)]
+                 closeStmt conn stmt
+                 close conn
+
+                 let total = length struGene0Samples
+                 putStrLn $ "总样本数量：" ++ show total
+
+                 -- ========== 8:2 数据集划分 ==========
+                 gen <- newStdGen
+                 let shuffledSamples = shuffle_ struGene0Samples gen
+                     splitBasic = floor $ 0.8 * fromIntegral total
+                     (basicSet, testSet) = splitAt splitBasic shuffledSamples
+                 putStrLn $ "基本集(80%)样本数：" ++ show (length basicSet)
+                 putStrLn $ "测试集(20%)样本数：" ++ show (length testSet)
+
+                 putStrLn "\n====【用测试集评估】===="
+                 predLabelPairs <- mapM (\x -> syntaxDisambigOnStruGene0BySampleSimOnIdentity x basicSet) testSet    -- [(Prior, Prior)]
+                 return predLabelPairs
+
+               "T0-X-Y-ZHAO" -> do                      -- StruGene0, ZHAO Xin-yuan's method
+                 -- ========== 获取消岐样本 ==========
+                 context02ClauTagPriorBase <- getContext02ClauTagPriorBase startId endId       -- [(ContextOfSG0, [ClauTagPrior])]
+                 let total = length context02ClauTagPriorBase
+                 putStrLn $ "总样本数量：" ++ show total
+
+                 -- ========== 8:2 数据集划分 ==========
+                 gen <- newStdGen
+                 let shuffledSamples = shuffle_ context02ClauTagPriorBase gen
+                     splitBasic = floor $ 0.8 * fromIntegral total
+                     (basicSet, testSet) = splitAt splitBasic shuffledSamples
+                 putStrLn $ "基本集(80%)样本数：" ++ show (length basicSet)
+                 putStrLn $ "测试集(20%)样本数：" ++ show (length testSet)
+
+                 putStrLn "\n====【用测试集评估】===="
+                 predLabelPairs <- mapM (\x -> do
+                                     sample <- findStruGene0SampleByMaxContextSim (fst x) basicSet  -- (SIdx, SimDeg, Context02ClauTagPrior)
+                                     let pred = (fromMaybe' . priorWithHighestFreq . snd . thd3) sample
+                                         label = (fromMaybe' . priorWithHighestFreq . snd) x
+                                     return (pred, label)
+                                     ) testSet                                  -- [(Prior, Prior)]
+                 return predLabelPairs
+
+               "T3a0-H-DONG" -> do                           -- StruGene3a0, DONG Han's method
+                 -- ========== 获取消岐样本 ==========
+                 context3a02ClauTagPriorBase <- getContextOfSG3a02ClauTagPriorBase startId endId       -- [(ContextOfSG3a0, [ClauTagPrior])]
+                 let total = length context3a02ClauTagPriorBase
+                 putStrLn $ "总样本数量：" ++ show total
+
+                 -- ========== 8:2 数据集划分 ==========
+                 gen <- newStdGen
+                 let shuffledSamples = shuffle_ context3a02ClauTagPriorBase gen
+                     splitBasic = floor $ 0.8 * fromIntegral total
+                     (basicSet, testSet) = splitAt splitBasic shuffledSamples
+                 putStrLn $ "基本集(80%)样本数：" ++ show (length basicSet)
+                 putStrLn $ "测试集(20%)样本数：" ++ show (length testSet)
+
+                 putStrLn "\n====【用测试集评估】===="
+                 predLabelPairs <- mapM (\x -> do
+                                     sample <- findStruGene3a0SampleByMaxContextSim (fst x) basicSet  -- (SIdx, SimDeg, Context3a02ClauTagPrior)
+                                     let pred = (fromMaybe' . priorWithHighestFreq . snd . thd3) sample
+                                         label = (fromMaybe' . priorWithHighestFreq . snd) x
+                                     return (pred, label)
+                                     ) testSet                                  -- [(Prior, Prior)]
+                 return predLabelPairs
+
+               _ -> error $ " doEvalSyntaxDisambigBySampleWithMaxSim: Unsupported syntax_ambig_resol_model '" ++ syntax_ambig_resol_model ++ "'"
+
+        mapWithProgressStep 10 (\x -> putStr (" " ++ show x)) predPairs
+
+        let correct = length $ filter (\(p,t) -> p == t) predPairs
+            total = length predPairs                                            -- Length of testSet
+            acc = fromIntegral correct / fromIntegral total :: Double
+
+        -- True/False: Predict correctly, Positive/Negative: Prediction result
+        -- TP: True Positive, FN: False Negative, FP: False Positive.
+
+            tp_Lp = length $ filter (\(p,t) -> p == Lp && t == Lp) predPairs   -- True Positive for 'Lp'
+            tp_Rp = length $ filter (\(p,t) -> p == Rp && t == Rp) predPairs   -- True Positive for 'Rp'
+            tp_Noth = length $ filter (\(p,t) -> p == Noth && t == Noth) predPairs   -- True Positive for 'Noth'
+
+            fn_Lp = length $ filter (\(p,t) -> p /= Lp && t == Lp) predPairs   -- False Negative for 'Lp'
+            fn_Rp = length $ filter (\(p,t) -> p /= Rp && t == Rp) predPairs   -- False Negative for 'Rp'
+            fn_Noth = length $ filter (\(p,t) -> p /= Noth && t == Noth) predPairs   -- False Negative for 'Noth'
+
+            fp_Lp = length $ filter (\(p,t) -> p == Lp && t /= Lp) predPairs   -- False Positives for 'Lp'
+            fp_Rp = length $ filter (\(p,t) -> p == Rp && t /= Rp) predPairs   -- False Positives for 'Rp'
+            fp_Noth = length $ filter (\(p,t) -> p == Noth && t /= Noth) predPairs   -- False Positives for 'Noth'
+
+            precision_Lp = case tp_Lp + fp_Lp > 0 of
+                             True -> fromIntegral tp_Lp / (fromIntegral (tp_Lp + fp_Lp))
+                             False -> 0.0
+            precision_Rp = case tp_Rp + fp_Rp > 0 of
+                             True -> fromIntegral tp_Rp / (fromIntegral (tp_Rp + fp_Rp))
+                             False -> 0.0
+            precision_Noth = case tp_Noth + fp_Noth > 0 of
+                               True -> fromIntegral tp_Noth / (fromIntegral (tp_Noth + fp_Noth))
+                               False -> 0.0
+
+            recall_Lp = case tp_Lp + fn_Lp > 0 of
+                          True -> fromIntegral tp_Lp / (fromIntegral (tp_Lp + fn_Lp))
+                          False -> 0.0
+            recall_Rp = case tp_Rp + fn_Rp > 0 of
+                          True -> fromIntegral tp_Rp / (fromIntegral (tp_Rp + fn_Rp))
+                          False -> 0.0
+            recall_Noth = case tp_Noth + fn_Noth > 0 of
+                            True -> fromIntegral tp_Noth / (fromIntegral (tp_Noth + fn_Noth))
+                            False -> 0.0
+
+            f1Score_Lp = case precision_Lp + recall_Lp > 0 of
+                           True -> 2 * precision_Lp * recall_Lp / (precision_Lp + recall_Lp)
+                           False -> 0.0
+            f1Score_Rp = case precision_Rp + recall_Rp > 0 of
+                           True -> 2 * precision_Rp * recall_Rp / (precision_Rp + recall_Rp)
+                           False -> 0.0
+            f1Score_Noth = case precision_Noth + recall_Noth > 0 of
+                             True -> 2 * precision_Noth * recall_Noth / (precision_Noth + recall_Noth)
+                             False -> 0.0
+
+            macro_avg_precision = (precision_Lp + precision_Rp + precision_Noth) / 3
+            macro_avg_recall = (recall_Lp + recall_Rp + recall_Noth) / 3
+            macro_avg_f1Score = (f1Score_Lp + f1Score_Rp + f1Score_Noth) / 3
+
+            n_Lp = fromIntegral (tp_Lp + fn_Lp)
+            n_Rp = fromIntegral (tp_Rp + fn_Rp)
+            n_Noth = fromIntegral (tp_Noth + fn_Noth)
+
+            weighted_avg_precision = (n_Lp * precision_Lp + n_Rp * precision_Rp + n_Noth * precision_Noth) / (fromIntegral total :: Double)
+            weighted_avg_recall = (n_Lp * recall_Lp + n_Rp * recall_Rp + n_Noth * recall_Noth) / (fromIntegral total :: Double)
+            weighted_avg_f1Score = (n_Lp * f1Score_Lp + n_Rp * f1Score_Rp + n_Noth * f1Score_Noth) / (fromIntegral total :: Double)
+
+        putStrLn "\n====【完整测试集正式评估结果】===="
+        putStrLn $ "正确样本数：" ++ show correct ++ " / " ++ show total
+        putStrLn $ "测试集准确率：" ++ show acc
+
+        putStrLn "\n====【分类别的完整评估指标】===="
+
+        putStrLn $ "  tp_Lp: " ++ show tp_Lp ++ ", tp_Rp: " ++ show tp_Rp ++ ", tp_Noth: " ++ show tp_Noth
+        putStrLn $ "  fn_Lp: " ++ show fn_Lp ++ ", fn_Rp: " ++ show fn_Rp ++ ", fn_Noth: " ++ show fn_Noth
+        putStrLn $ "  fp_Lp: " ++ show fp_Lp ++ ", fp_Rp: " ++ show fp_Rp ++ ", fp_Noth: " ++ show fp_Noth
+        putStrLn $ "  precision_Lp: " ++ (printf "%.4f" precision_Lp) ++ ", precision_Rp: " ++ (printf "%.4f" precision_Rp) ++ ", precision_Noth: " ++ (printf "%.4f" precision_Noth)
+        putStrLn $ "  recall_Lp: " ++ (printf "%.4f" recall_Lp) ++ ", recall_Rp: " ++ (printf "%.4f" recall_Rp) ++ ", recall_Noth: " ++ (printf "%.4f" recall_Noth)
+        putStrLn $ "  f1Score_Lp: " ++ (printf "%.4f" f1Score_Lp) ++ ", f1Score_Rp: " ++ (printf "%.4f" f1Score_Rp) ++ ", f1Score_Noth: " ++ (printf "%.4f" f1Score_Noth)
+        putStrLn $ "  macro_avg_precision: " ++ (printf "%.4f" macro_avg_precision) ++ ", macro_avg_recall: " ++ (printf "%.4f" macro_avg_recall) ++ ", macro_avg_f1Score: " ++ (printf "%.4f" macro_avg_f1Score)
+        putStrLn $ "  weighted_avg_precision: " ++ (printf "%.4f" weighted_avg_precision) ++ ", weighted_avg_recall: " ++ (printf "%.4f" weighted_avg_recall) ++ ", weighted_avg_f1Score: " ++ (printf "%.4f" weighted_avg_f1Score)
+
+      else putStr ""           -- Command was cancelled.
+
 -- C. Various maintenance tools.
 doMaintenance :: String -> IO ()
 doMaintenance username = do
@@ -1370,9 +1564,10 @@ doMaintenance username = do
     putStrLn " B -> Create semantic context for every word in clauses"
     putStrLn " C -> Create intersion juxtapositions for every clause in a treebank"
     putStrLn " D -> Check syntactic tree and syntax-semantic tree are isomorphic or not"
+    putStrLn " E -> Calculate precision, recall, and F1 score from prediction-label pair list"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -1391,6 +1586,7 @@ doMaintenance username = do
                "B" -> doCreateSemanticContextForWord           -- Defined in Module 'Maintain'
                "C" -> doCreateIntersionJuxtapositionForClause  -- Defined in Module 'Maintain'
                "D" -> checkIsomorphicBetwSynTreeAndSynSemTree  -- Defined in Module 'Maintain'
+               "E" -> calculatePrecisionByPredictionLabelPairList    -- Defined in Module 'Maintain'
              doMaintenance username                            -- Rear recursion
 
 -- C_1. Rearrange index column in a certain table.
@@ -1465,7 +1661,7 @@ doRearrangeIdinCertainTable username =
             putStrLn $ "Table " ++ tblName ++ "_bak was dropped."
             close conn
 
-          x | isPrefixOf "stru_gene3a_" x -> do
+          x | isPrefixOf "stru_gene3a_" x || isPrefixOf "stru_gene3a0_" x || isPrefixOf "stru_gene3a_phrasyn0_" x -> do
             let sqlstat = DS.fromString $ "insert into " ++ tblName ++ "_bak (leftOverTree, rightOverTree, clauTagPrior, lpHitCount, rpHitCount, nothHitCount) select leftOverTree, rightOverTree, clauTagPrior, lpHitCount, rpHitCount, nothHitCount from " ++ tblName     -- Copy table data to new table.
             stmt' <- prepareStmt conn sqlstat
             ok <- executeStmt conn stmt' []
@@ -1674,15 +1870,16 @@ doClustering username = do
     putStrLn " D -> Get similarity degrees between one ClauTagPrior context to every context of StruGene samples"
     putStrLn " E -> Among StruGene samples, calculate similarity degree between every pair of contexts"
     putStrLn " F -> Run K-Medoids clustering using DB similarity and analyze Prior distribution"
-    putStrLn " G -> Batch running of K-Medoids clustering on StruGene2 samples."
-    putStrLn " H -> Calculate probability of that two closest samples has same Prior value in StruGene2 samples"
-    putStrLn " I -> Among StruGene3a samples, calculate similarity degree between every pair of contexts"
-    putStrLn " J -> Among StruGene3a0 samples, calculate similarity degree between every pair of contexts"
-    putStrLn " K -> From SLR raw samples, get SLR ripe samples"
-    putStrLn " L -> Calculate inter-value similarity degrees of every PhraSyn member on SLR ripe corpus"
-    putStrLn " M -> Calculate inter-value similarity degrees of every PhraSyn0 member on SLR ripe corpus"
+    putStrLn " 10 -> Batch running of K-Medoids clustering on StruGene2 samples."
+    putStrLn " 11 -> Calculate probability of that two closest samples has same Prior value in StruGene2 samples"
+    putStrLn " 12 -> Among StruGene3a samples, calculate similarity degree between every pair of contexts"
+    putStrLn " 13 -> Among StruGene3a0 samples, calculate similarity degree between every pair of contexts"
+    putStrLn " 14 -> From SLR raw samples, get SLR ripe samples"
+    putStrLn " 15 -> Calculate inter-value similarity degrees of every PhraSyn member on SLR ripe corpus"
+    putStrLn " 16 -> Calculate inter-value similarity degrees of every PhraSyn0 member on SLR ripe corpus"
+    putStrLn " 17 -> Calculate inter-value similarity degrees of every PhraSyn0 member on syntax_ambig_resol_model"
     putStrLn " 0 -> Go back to the upper layer"
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","G","H","I","J","K","L","M","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","10","11","12","13","14","15","16","17","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -1705,13 +1902,14 @@ doClustering username = do
                "D" -> clusteringAnalysis 13
                "E" -> clusteringAnalysis 14
                "F" -> kMedoidsClusteringOnStruGene2Samples
-               "G" -> batchKMedoidsOnStruGene2Samples
-               "H" -> doCalProbOfClosestSampleHasSamePrior
-               "I" -> clusteringAnalysis 18
-               "J" -> clusteringAnalysis 19
-               "K" -> clusteringAnalysis 20
-               "L" -> clusteringAnalysis 21
-               "M" -> clusteringAnalysis 22
+               "10" -> batchKMedoidsOnStruGene2Samples
+               "11" -> doCalProbOfClosestSampleHasSamePrior
+               "12" -> clusteringAnalysis 18
+               "13" -> clusteringAnalysis 19
+               "14" -> clusteringAnalysis 20
+               "15" -> clusteringAnalysis 21
+               "16" -> clusteringAnalysis 22
+               "17" -> clusteringAnalysis 23
              doClustering username                             -- Rear recursion
 
 -- D_1.测试求初始点函数

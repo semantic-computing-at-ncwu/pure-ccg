@@ -24,6 +24,7 @@ module Maintain (
     createSemanContextForEveryWord,           -- IO ()
     createIntersionJuxtapositionForEveryClau, -- IO ()
     checkIsomorphicBetwSynTreeAndSynSemTree,  -- IO ()
+    calculatePrecisionByPredictionLabelPairList,     -- IO ()
     ) where
 
 import Control.Monad
@@ -637,3 +638,92 @@ checkIsomorphicBetwSynTreeAndSynSemTree = do
         id2TreePairNotIsomorphicList = filter (\row -> not (isIsomorphic ((fst . snd) row) ((snd . snd) row))) id2TreePairList
     putStrLn $ show (length id2TreePairNotIsomorphicList) ++ " pairs of syntax trees and syntax-semantic trees are NOT isomorphic."
     putStrLn $ "  They are: " ++ show id2TreePairNotIsomorphicList
+
+{- Calculate precision, recall, and F1 score from prediction-label pair list.
+   Input example: "(Prior, Prior) (Prior, Prior) (Prior,Prior)"
+   Output: Precision, recall, and F1 score for Lp, Rp, and Noth, together with their macro averages.
+ -}
+calculatePrecisionByPredictionLabelPairList :: IO ()
+calculatePrecisionByPredictionLabelPairList = do
+    lineSepatatedBySpace <- getLine
+    let lineSepatatedByComma = replace " " "," lineSepatatedBySpace
+        predPairsStr = "[" ++ lineSepatatedByComma ++ "]"
+        predPairs = map (\x -> (read (fst x) :: Prior, read (snd x) :: Prior)) $ map stringToTuple $ stringToList predPairsStr
+
+    mapWithProgressStep 10 (\x -> putStr (" " ++ show x)) predPairs
+
+    let correct = length $ filter (\(p,t) -> p == t) predPairs
+        total = length predPairs                                            -- Length of testSet
+        acc = fromIntegral correct / fromIntegral total :: Double
+
+    -- True/False: Predict correctly, Positive/Negative: Prediction result
+    -- TP: True Positive, FN: False Negative, FP: False Positive.
+
+        tp_Lp = length $ filter (\(p,t) -> p == Lp && t == Lp) predPairs   -- True Positive for 'Lp'
+        tp_Rp = length $ filter (\(p,t) -> p == Rp && t == Rp) predPairs   -- True Positive for 'Rp'
+        tp_Noth = length $ filter (\(p,t) -> p == Noth && t == Noth) predPairs   -- True Positive for 'Noth'
+
+        fn_Lp = length $ filter (\(p,t) -> p /= Lp && t == Lp) predPairs   -- False Negative for 'Lp'
+        fn_Rp = length $ filter (\(p,t) -> p /= Rp && t == Rp) predPairs   -- False Negative for 'Rp'
+        fn_Noth = length $ filter (\(p,t) -> p /= Noth && t == Noth) predPairs   -- False Negative for 'Noth'
+
+        fp_Lp = length $ filter (\(p,t) -> p == Lp && t /= Lp) predPairs   -- False Positives for 'Lp'
+        fp_Rp = length $ filter (\(p,t) -> p == Rp && t /= Rp) predPairs   -- False Positives for 'Rp'
+        fp_Noth = length $ filter (\(p,t) -> p == Noth && t /= Noth) predPairs   -- False Positives for 'Noth'
+
+        precision_Lp = case tp_Lp + fp_Lp > 0 of
+                         True -> fromIntegral tp_Lp / (fromIntegral (tp_Lp + fp_Lp))
+                         False -> 0.0
+        precision_Rp = case tp_Rp + fp_Rp > 0 of
+                         True -> fromIntegral tp_Rp / (fromIntegral (tp_Rp + fp_Rp))
+                         False -> 0.0
+        precision_Noth = case tp_Noth + fp_Noth > 0 of
+                           True -> fromIntegral tp_Noth / (fromIntegral (tp_Noth + fp_Noth))
+                           False -> 0.0
+
+        recall_Lp = case tp_Lp + fn_Lp > 0 of
+                      True -> fromIntegral tp_Lp / (fromIntegral (tp_Lp + fn_Lp))
+                      False -> 0.0
+        recall_Rp = case tp_Rp + fn_Rp > 0 of
+                      True -> fromIntegral tp_Rp / (fromIntegral (tp_Rp + fn_Rp))
+                      False -> 0.0
+        recall_Noth = case tp_Noth + fn_Noth > 0 of
+                        True -> fromIntegral tp_Noth / (fromIntegral (tp_Noth + fn_Noth))
+                        False -> 0.0
+
+        f1Score_Lp = case precision_Lp + recall_Lp > 0 of
+                       True -> 2 * precision_Lp * recall_Lp / (precision_Lp + recall_Lp)
+                       False -> 0.0
+        f1Score_Rp = case precision_Rp + recall_Rp > 0 of
+                       True -> 2 * precision_Rp * recall_Rp / (precision_Rp + recall_Rp)
+                       False -> 0.0
+        f1Score_Noth = case precision_Noth + recall_Noth > 0 of
+                         True -> 2 * precision_Noth * recall_Noth / (precision_Noth + recall_Noth)
+                         False -> 0.0
+
+        macro_avg_precision = (precision_Lp + precision_Rp + precision_Noth) / 3
+        macro_avg_recall = (recall_Lp + recall_Rp + recall_Noth) / 3
+        macro_avg_f1Score = (f1Score_Lp + f1Score_Rp + f1Score_Noth) / 3
+
+        n_Lp = fromIntegral (tp_Lp + fn_Lp)
+        n_Rp = fromIntegral (tp_Rp + fn_Rp)
+        n_Noth = fromIntegral (tp_Noth + fn_Noth)
+
+        weighted_avg_precision = (n_Lp * precision_Lp + n_Rp * precision_Rp + n_Noth * precision_Noth) / (fromIntegral total :: Double)
+        weighted_avg_recall = (n_Lp * recall_Lp + n_Rp * recall_Rp + n_Noth * recall_Noth) / (fromIntegral total :: Double)
+        weighted_avg_f1Score = (n_Lp * f1Score_Lp + n_Rp * f1Score_Rp + n_Noth * f1Score_Noth) / (fromIntegral total :: Double)
+
+    putStrLn "\n====【完整测试集正式评估结果】===="
+    putStrLn $ "正确样本数：" ++ show correct ++ " / " ++ show total
+    putStrLn $ "测试集准确率：" ++ show acc
+
+    putStrLn "\n====【分类别的完整评估指标】===="
+
+    putStrLn $ "  tp_Lp: " ++ show tp_Lp ++ ", tp_Rp: " ++ show tp_Rp ++ ", tp_Noth: " ++ show tp_Noth
+    putStrLn $ "  fn_Lp: " ++ show fn_Lp ++ ", fn_Rp: " ++ show fn_Rp ++ ", fn_Noth: " ++ show fn_Noth
+    putStrLn $ "  fp_Lp: " ++ show fp_Lp ++ ", fp_Rp: " ++ show fp_Rp ++ ", fp_Noth: " ++ show fp_Noth
+    putStrLn $ "  precision_Lp: " ++ (printf "%.4f" precision_Lp) ++ ", precision_Rp: " ++ (printf "%.4f" precision_Rp) ++ ", precision_Noth: " ++ (printf "%.4f" precision_Noth)
+    putStrLn $ "  recall_Lp: " ++ (printf "%.4f" recall_Lp) ++ ", recall_Rp: " ++ (printf "%.4f" recall_Rp) ++ ", recall_Noth: " ++ (printf "%.4f" recall_Noth)
+    putStrLn $ "  f1Score_Lp: " ++ (printf "%.4f" f1Score_Lp) ++ ", f1Score_Rp: " ++ (printf "%.4f" f1Score_Rp) ++ ", f1Score_Noth: " ++ (printf "%.4f" f1Score_Noth)
+    putStrLn $ "  macro_avg_precision: " ++ (printf "%.4f" macro_avg_precision) ++ ", macro_avg_recall: " ++ (printf "%.4f" macro_avg_recall) ++ ", macro_avg_f1Score: " ++ (printf "%.4f" macro_avg_f1Score)
+    putStrLn $ "  weighted_avg_precision: " ++ (printf "%.4f" weighted_avg_precision) ++ ", weighted_avg_recall: " ++ (printf "%.4f" weighted_avg_recall) ++ ", weighted_avg_f1Score: " ++ (printf "%.4f" weighted_avg_f1Score)

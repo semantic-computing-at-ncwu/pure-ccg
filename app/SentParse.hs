@@ -2982,7 +2982,7 @@ syntaxAmbiResolByManualResol' nPCs (lp, rp) = do
         let reps = getPhraByStart (enOfCate rp + 1) nPCs      -- Get all right-entend phrases
         putStr "Find structural fragment: "
         showStruFrag leps lp rp reps ot
-      x | isPrefixOf "stru_gene3a_phrasyn0_" x -> do          -- Multimodel
+      x | isPrefixOf "stru_gene3a_phrasyn0_" x || isPrefixOf "stru_gene3a0_" x -> do          -- Multimodel
         let leps = getPhraByEnd (stOfCate lp - 1) nPCs        -- Get all left-extend phrases
         let reps = getPhraByStart (enOfCate rp + 1) nPCs      -- Get all right-entend phrases
         putStr "Find structural fragment: "
@@ -3031,12 +3031,12 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
     let leftOverTrees = findAllTree leftOver nPCs                   -- [BiTree PhraCate]
     let rightOverTrees = findAllTree rightOver nPCs                 -- [BiTree PhraCate]
 
-    putStrLn $ " updateSyntaxAmbiResolSample': Num. of leftOverTrees = " ++ show (length leftOverTrees) ++ ", Num. of rightOverTrees = " ++ show (length rightOverTrees)
+--    putStrLn $ " updateSyntaxAmbiResolSample': Num. of leftOverTrees = " ++ show (length leftOverTrees) ++ ", Num. of rightOverTrees = " ++ show (length rightOverTrees)
 
     forM_ [(lt, rt) | lt <- leftOverTrees, rt <- rightOverTrees] $ \(leftOverTree, rightOverTree) -> do
       case syntax_ambig_resol_model of
         x | isPrefixOf "stru_gene3a0s_" x  -> do                    -- Multimodel
-          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene3a0s_'"
+          putStrLn $ " updateSyntaxAmbiResolSample': Match StruGene3a0s, x = " ++ x
           let lot = phraCateTree2PhraSyn0Tree leftOverTree          -- BiTree PhraSyn0
               rot = phraCateTree2PhraSyn0Tree rightOverTree         -- BiTree PhraSyn0
               lotv = doubleBackSlash (show lot)       -- Convert BiTree Syntax0 into String, and double backward slashes.
@@ -3069,14 +3069,14 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
                   error "updateSyntaxAmbiResolSample': Find duplicate structural genes. (Impossible)"
                 else do
                   let id = fromMySQLInt32U ((rows!!0)!!0)
-                  let clauTagPriorListStr = fromMySQLText ((rows!!0)!!1)
-                  let lpHitCount = fromMySQLInt16U ((rows!!0)!!2)
-                  let rpHitCount = fromMySQLInt16U ((rows!!0)!!3)
-                  let nothHitCount = fromMySQLInt16U ((rows!!0)!!4)
+                      clauTagPriorListStr = fromMySQLText ((rows!!0)!!1)
+                      lpHitCount = fromMySQLInt16U ((rows!!0)!!2)
+                      rpHitCount = fromMySQLInt16U ((rows!!0)!!3)
+                      nothHitCount = fromMySQLInt16U ((rows!!0)!!4)
 
                   putStrLn $ "updateSyntaxAmbiResolSample': (" ++ show id ++ ") clauTagPrior: " ++ clauTagPriorListStr ++ ", lpHitCount: " ++ show lpHitCount ++ ", rpHitCount: " ++ show rpHitCount ++ ", nothHitCount: " ++ show nothHitCount
                   let clauTagPriorList = stringToCTPList clauTagPriorListStr
-                  let priorList = map snd $ filter ((== clauTag) . fst) clauTagPriorList          -- The selected priorities
+                      priorList = map snd $ filter ((== clauTag) . fst) clauTagPriorList          -- The selected priorities
 
                   if elem prior priorList
                     then putStrLn $ "updateSyntaxAmbiResolSample': " ++ show (clauTag, prior) ++ " was hit in row " ++ show id
@@ -3110,8 +3110,8 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               closeStmt conn stmt1
               close conn
 
-        x | isPrefixOf "stru_gene3a_phrasyn0_" x  -> do               -- Multimodel
-          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene3a_phrasyn0_'"
+        x | isPrefixOf "stru_gene3a_phrasyn0_" x || isPrefixOf "stru_gene3a0_" x -> do            -- Multimodel
+          putStrLn $ " updateSyntaxAmbiResolSample': Match StruGene3a0, x = " ++ x
           let lot = phraCateTree2PhraSyn0Tree leftOverTree      -- BiTree PhraSyn0
               rot = phraCateTree2PhraSyn0Tree rightOverTree     -- BiTree PhraSyn0
               lotv = doubleBackSlash (show lot)                 -- Convert BiTree Syntax0 into String, and double backward slashes.
@@ -3164,11 +3164,11 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
 
             else do
               putStrLn "Inquire failed."
-              let clauTagPriorList = [(clauTag, prior)]
+              let clauTagPrior = (clauTag, prior)
                   sqlstat = case prior of
-                            Lp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,lpHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPriorList ++ "]',1)")) :: Query
-                            Rp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,rpHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPriorList ++ "]',1)")) :: Query
-                            Noth -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,nothHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPriorList ++ "]',1)")) :: Query
+                              Lp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,lpHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPrior ++ "]',1)")) :: Query
+                              Rp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,rpHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPrior ++ "]',1)")) :: Query
+                              Noth -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftOverTree,rightOverTree,clauTagPrior,nothHitCount) values ('" ++ lotv ++ "','" ++ rotv ++ "','[" ++ show clauTagPrior ++ "]',1)")) :: Query
               stmt1 <- prepareStmt conn sqlstat
               oks <- executeStmt conn stmt1 []             -- Insert the described structural gene.
               putStrLn $ "updateSyntaxAmbiResolSample': Last inserted row with ID " ++ show (getOkLastInsertID oks)
@@ -3176,7 +3176,7 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               close conn
 
         x | isPrefixOf "stru_gene3a_" x -> do                  -- Multimodel
-          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene3a_'"
+          putStrLn $ " updateSyntaxAmbiResolSample': Match StruGene3a, x = " ++ x
           let lot = phraCateTree2PhraSynTree leftOverTree      -- BiTree PhraSyn
               rot = phraCateTree2PhraSynTree rightOverTree     -- BiTree PhraSyn
               lotv = doubleBackSlash (show lot)                -- Convert BiTree Syntax into String, and double backward slashes.
@@ -3241,7 +3241,7 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               close conn
 
         x | isPrefixOf "stru_gene3_" x -> do                    -- Multimodel
-          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene3_'"
+          putStrLn $ " updateSyntaxAmbiResolSample': Match StruGene3, x = " ++ x
           let leftExtend = getPhraByEnd (stOfCate leftOver - 1) nPCs          -- Get all left-extend phrases
               rightExtend = getPhraByStart (enOfCate rightOver + 1) nPCs      -- Get all right-entend phrases
 
@@ -3322,8 +3322,8 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               closeStmt conn stmt1
               close conn
 
-        x | isPrefixOf "stru_gene_" x  -> do               -- "stru_gene_202408", "stru_gene_202412", "stru_gene_202501", "stru_gene_20260922"
-          putStrLn " updateSyntaxAmbiResolSample': Match 'stru_gene_'"
+        x | isPrefixOf "stru_gene_phrasyn_" x  -> do           -- "stru_gene_phrasyn_202501"
+          putStrLn $ " updateSyntaxAmbiResolSample': Match StruGene, x = " ++ x
           let leftExtend = getPhraByEnd (stOfCate leftOver - 1) nPCs          -- Get all left-extend phrases
               rightExtend = getPhraByStart (enOfCate rightOver + 1) nPCs      -- Get all right-entend phrases
 
@@ -3331,6 +3331,84 @@ updateSyntaxAmbiResolSample' clauTag nPCs overPair = do
               lo = (ctpsOfCate leftOver)!!0                    -- (Category,Tag,PhraStru,Span) of left-overlapping phrase
               ro = (ctpsOfCate rightOver)!!0                   -- (Category,Tag,PhraStru,Span) of right-overlapping phrase
               re = map ((!!0) . ctpsOfCate) rightExtend        -- [(Category,Tag,PhraStru,Span)] of right-extended phrases
+              ot = overType                                   -- Overlap type
+
+              lev = doubleBackSlash (show le)                 -- Get values to insert them into MySql Table
+              lov = doubleBackSlash (show lo)
+              rov = doubleBackSlash (show ro)
+              rev = doubleBackSlash (show re)
+              otv = show overType
+
+          conn <- getConn
+          let sqlstat = read (show ("select id, clauTagPrior, lpHitCount, rpHitCount, nothHitCount from "
+                                   ++ syntax_ambig_resol_model
+                                   ++ " where leftExtend = '" ++ lev ++ "' && "
+                                   ++ "leftOver = '" ++ lov ++ "' && "
+                                   ++ "rightOver = '" ++ rov ++ "' && "
+                                   ++ "rightExtend = '" ++ rev ++ "' && "
+                                   ++ "overType = " ++ otv)) :: Query
+          stmt <- prepareStmt conn sqlstat
+          (defs, is) <- queryStmt conn stmt []
+
+          rows <- S.toList is
+          if rows /= []
+            then
+              if length rows > 1
+                then do
+                  closeStmt conn stmt
+                  close conn                           -- Close MySQL connection.
+                  error "updateSyntaxAmbiResolSample': Find duplicate structural genes."
+                else do
+                  let id = fromMySQLInt32U ((rows!!0)!!0)
+                      clauTagPriorListStr = fromMySQLText ((rows!!0)!!1)
+                      lpHitCount = fromMySQLInt16U ((rows!!0)!!2)
+                      rpHitCount = fromMySQLInt16U ((rows!!0)!!3)
+                      nothHitCount = fromMySQLInt16U ((rows!!0)!!4)
+
+                  putStrLn $ "updateSyntaxAmbiResolSample': (" ++ show id ++ ") clauTagPrior: " ++ clauTagPriorListStr ++ ", lpHitCount: " ++ show lpHitCount ++ ", rpHitCount: " ++ show rpHitCount ++ ", nothHitCount: " ++ show nothHitCount
+                  let clauTagPriorList = stringToCTPList clauTagPriorListStr
+                      priorList = map snd $ filter ((== clauTag) . fst) clauTagPriorList          -- The selected priorities
+
+                  if elem prior priorList
+                    then putStrLn $ "updateSyntaxAmbiResolSample': " ++ show (clauTag, prior) ++ " was hit in row " ++ show id
+                    else do
+                      resetStmt conn stmt
+                      let sqlstat = case prior of
+                                    Lp -> read (show ("update " ++ syntax_ambig_resol_model ++ " set clauTagPrior = ?, lpHitCount = ? where id = '" ++ show id ++ "'")) :: Query
+                                    Rp -> read (show ("update " ++ syntax_ambig_resol_model ++ " set clauTagPrior = ?, rpHitCount = ? where id = '" ++ show id ++ "'")) :: Query
+                                    Noth -> read (show ("update " ++ syntax_ambig_resol_model ++ " set clauTagPrior = ?, nothHitCount = ? where id = '" ++ show id ++ "'")) :: Query
+                      stmt <- prepareStmt conn sqlstat
+                      let newClauTagPriorList = (clauTag, prior):clauTagPriorList     -- Add with one ClauTagPrior value.
+                      case prior of
+                        Lp -> executeStmt conn stmt [toMySQLText (show newClauTagPriorList), toMySQLInt16U (lpHitCount + 1)]    -- Add 'lpHitCount' by 1.
+                        Rp -> executeStmt conn stmt [toMySQLText (show newClauTagPriorList), toMySQLInt16U (rpHitCount + 1)]    -- Add 'rpHitCount' by 1.
+                        Noth -> executeStmt conn stmt [toMySQLText (show newClauTagPriorList), toMySQLInt16U (nothHitCount + 1)]   -- Add 'nothHitCount' by 1.
+                      putStrLn $ "updateSyntaxAmbiResolSample': " ++ show (clauTag, prior) ++ " was inserted into row " ++ show id
+                  closeStmt conn stmt
+                  close conn                       -- Close MySQL connection.
+
+            else do
+              putStrLn "Inquire failed."
+              let clauTagPrior = (clauTag, prior)
+              let sqlstat = case prior of
+                            Lp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftExtend,leftOver,rightOver,rightExtend,overType,clauTagPrior,lpHitCount) values ('" ++ lev ++ "','" ++ lov ++ "','" ++ rov ++ "','" ++ rev ++ "'," ++ otv ++ ",'[" ++ show clauTagPrior ++ "]',1)")) :: Query
+                            Rp -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftExtend,leftOver,rightOver,rightExtend,overType,clauTagPrior,rpHitCount) values ('" ++ lev ++ "','" ++ lov ++ "','" ++ rov ++ "','" ++ rev ++ "'," ++ otv ++ ",'[" ++ show clauTagPrior ++ "]',1)")) :: Query
+                            Noth -> read (show ("insert " ++ syntax_ambig_resol_model ++ " (leftExtend,leftOver,rightOver,rightExtend,overType,clauTagPrior,nothHitCount) values ('" ++ lev ++ "','" ++ lov ++ "','" ++ rov ++ "','" ++ rev ++ "'," ++ otv ++ ",'[" ++ show clauTagPrior ++ "]',1)")) :: Query
+              stmt1 <- prepareStmt conn sqlstat
+              oks <- executeStmt conn stmt1 []             -- Insert the described structural gene.
+              putStrLn $ "updateSyntaxAmbiResolSample': Last inserted row with ID " ++ show (getOkLastInsertID oks)
+              closeStmt conn stmt1
+              close conn                                   -- Close MySQL connection.
+
+        x | isPrefixOf "stru_gene_phrasyn0_" x  -> do          -- "stru_gene_phrasyn0_202408", "stru_gene_phrasyn0_202408", "stru_gene_phrasyn0_clcg_20260922"
+          putStrLn $ " updateSyntaxAmbiResolSample': Match StruGene0, x = " ++ x
+          let leftExtend = getPhraByEnd (stOfCate leftOver - 1) nPCs          -- Get all left-extend phrases
+              rightExtend = getPhraByStart (enOfCate rightOver + 1) nPCs      -- Get all right-entend phrases
+
+              le = map ((!!0) . ctpOfCate) leftExtend         -- [(Category,Tag,PhraStru)] of left-extended phrases
+              lo = (ctpOfCate leftOver)!!0                    -- (Category,Tag,PhraStru) of left-overlapping phrase
+              ro = (ctpOfCate rightOver)!!0                   -- (Category,Tag,PhraStru) of right-overlapping phrase
+              re = map ((!!0) . ctpOfCate) rightExtend        -- [(Category,Tag,PhraStru)] of right-extended phrases
               ot = overType                                   -- Overlap type
 
               lev = doubleBackSlash (show le)                 -- Get values to insert them into MySql Table

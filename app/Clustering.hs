@@ -15,12 +15,13 @@ module Clustering (
     distVect4StruGeneByIdentity,         -- StruGene -> StruGene -> [Double]
     distVect4StruGene0ByIdentity,        -- StruGene0 -> StruGene0 -> [Double]
     distVect4ContextOfSGByIdentity,      -- ContextOfSG -> ContextOfSG -> [Double]
-    distVect4Context0OfSGByIdentity,     -- Context0OfSG -> Context0OfSG -> [Double]
+    distVect4ContextOfSG0ByIdentity,     -- ContextOfSG0 -> ContextOfSG0 -> [Double]
     DistWeiRatioList,          -- [Int], namely [wle, wlo, wro, wre, wot, wpr]
     dist4StruGeneByWeightSum,  -- StruGene -> StruGene -> DistWeiRatioList -> Double
     dist4ContextOfSGByWeightSum,         -- ContextOfSG -> ContextOfSG -> DistWeiRatioList -> Double
-    dist4Context0OfSGByWeightSum,        -- Context0OfSG -> Context0OfSG -> DistWeiRatioList -> Double
+    dist4ContextOfSG0ByWeightSum,        -- ContextOfSG0 -> ContextOfSG0 -> DistWeiRatioList -> Double
     dist4StruGeneByArithMean,  -- StruGene -> StruGene -> Double
+    syntaxDisambigOnStruGene0BySampleSimOnIdentity,      -- StruGene0Sample -> [StruGene0Sample] -> IO (Prior, Prior)
     StruGene,                  -- (LeftExtend, LeftOver, RightOver, RightExtend, OverType, Prior)
     getKModeByMaxMinPoint,     -- [StruGeneSample] -> [StruGeneSample] -> Map.Map SIdx Double -> Int -> [StruGene]
     Dist,                      -- Double
@@ -42,6 +43,7 @@ module Clustering (
     ClusterMap,                          -- Map CIdx [StruGene]
     findFinalCluster4AllSamplesByArithAdd,    -- TableName -> ClusterMap -> CentreList -> KVal -> INo -> DistTotal -> DistWeiRatioList -> IO (INo, Dist)
     readStreamByStruGene,                -- [StruGeneSample] -> S.InputStream [MySQLValue] -> IO [StruGeneSample]
+    readStreamByStruGene0,               -- [StruGene0Sample] -> S.InputStream [MySQLValue] -> IO [StruGene0Sample]
     readStreamByStruGene2GetStruGeneSample,          -- [StruGeneSample] -> S.InputStream [MySQLValue] -> IO [StruGeneSample]
     readStreamBySIdxPrior,               -- [SIdxPrior] -> S.InputStream [MySQLValue] -> IO [SIdxPrior]
     readStreamBySIdxRules,               -- [SIdxRules] -> S.InputStream [MySQLValue] -> IO [SIdxRules]
@@ -99,6 +101,9 @@ module Clustering (
     getContextOfOTPairSim,           -- Context2OverTypeBase -> IO ([(SimDeg,SimDeg,SimDeg,SimDeg)], [((ContextOfOT, ContextOfOT), SimDeg)])
     getOverTypePair2Sim,             -- SIdx -> SIdx -> [((OverType, OverType), SimDeg)]
     getContext2ClauTagPriorBase,     -- SIdx -> SIdx -> IO [Context2ClauTagPrior]
+    getContext02ClauTagPriorBase,    -- SIdx -> SIdx -> IO [Context02ClauTagPrior]
+    getContextOfSG3a02ClauTagPriorBase,       -- SIdx -> SIdx -> IO [ContextOfSG3a02ClauTagPrior]
+
     getSIdx2ContextOfSGBase,         -- SIdx -> SIdx -> IO [(SIdx, ContextOfSG)]
     getSIdx2ContextOfSG3aBase,       -- SIdx -> SIdx -> IO [(SIdx, ContextOfSG3a)]
     getSIdx2ContextOfSG3a0Base,      -- SIdx -> SIdx -> IO [(SIdx, ContextOfSG3a0)]
@@ -117,9 +122,13 @@ module Clustering (
     getContextOfSGPairSimWithStaticOT,     -- Context2ClauTagPriorBase -> IO ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG, ContextOfSG), SimDeg)])
     getOneToAllContextOfSGSim,       -- ContextOfSG -> Context2ClauTagPriorBase -> IO ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG, ContextOfSG), SimDeg)])
     getOneToAllContextOfSGSim',      -- ContextOfSG -> Context2ClauTagPriorBase -> IO ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG, ContextOfSG), SimDeg)])
+    getOneToAllContextOfSG0Sim,      -- ContextOfSG0 -> Context02ClauTagPriorBase -> IO ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG0, ContextOfSG0), SimDeg)])
+    getOneToAllContextOfSG0Sim',     -- ContextOfSG0 -> Context02ClauTagPriorBase -> IO ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG0, ContextOfSG0), SimDeg)])
     getOneToAllContextOfSG3a0Sim,    -- ContextOfSG3a0 -> ContextOfSG3a02ClauTagPriorBase -> IO ([(SimDeg, SimDeg)], [((ContextOfSG3a0, ContextOfSG3a0), SimDeg)])
     getOneToAllContextOfSG3a0Sim',   -- ContextOfSG3a0 -> ContextOfSG3a02ClauTagPriorBase -> IO ([(SimDeg, SimDeg)], [((ContextOfSG3a0, ContextOfSG3a0), SimDeg)])
     findStruGeneSampleByMaxContextSim,     -- ContextOfSG -> Context2ClauTagPriorBase -> IO (SIdx, SimDeg, Context2ClauTagPrior)
+    findStruGene0SampleByMaxContextSim,    -- ContextOfSG0 -> Context02ClauTagPriorBase -> IO (SIdx, SimDeg, Context02ClauTagPrior)
+    findStruGene3a0SampleByMaxContextSim,  -- ContextOfSG3a0 -> ContextOfSG3a02ClauTagPriorBase -> IO (SIdx, SimDeg, ContextOfSG3a02ClauTagPrior)
     findWhereSim1HappenAmongStruGeneSamples,   -- SIdx -> Int -> [Context2ClauTagPrior] -> IO ()
 
     readStaticTypePair2Sim,     -- IO [((Category, Category), SimDeg)]
@@ -274,11 +283,11 @@ distVect4ContextOfSGByIdentity c1 c2 = [d1, d2, d3, d4, d5]
             False -> 1.0
 
 {- The distance vector between two StruGene0 contexts.
- - Context0OfSG :: (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType), the distance vector is obtained by following function.
+ - ContextOfSG0 :: (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType), the distance vector is obtained by following function.
  - Elements in distance vector all are in [0, 1].
  -}
-distVect4Context0OfSGByIdentity :: Context0OfSG -> Context0OfSG -> [Double]
-distVect4Context0OfSGByIdentity c1 c2 = [d1, d2, d3, d4, d5]
+distVect4ContextOfSG0ByIdentity :: ContextOfSG0 -> ContextOfSG0 -> [Double]
+distVect4ContextOfSG0ByIdentity c1 c2 = [d1, d2, d3, d4, d5]
     where
     d1 = distPhraSyn0SetByIdentity (fst5 c1) (fst5 c2)
     d2 = distPhraSyn0ByIdentity (snd5 c1) (snd5 c2)
@@ -316,16 +325,55 @@ dist4ContextOfSGByWeightSum c1 c2 distWeiRatioList = sum distList / fromIntegral
  - (1) Weightedly sum distances only on StruGene0 context components;
  - (2) Normalize to range [0, 1].
  -}
-dist4Context0OfSGByWeightSum :: Context0OfSG -> Context0OfSG -> DistWeiRatioList -> Double
-dist4Context0OfSGByWeightSum c1 c2 distWeiRatioList = sum distList / fromIntegral ratioTotal
+dist4ContextOfSG0ByWeightSum :: ContextOfSG0 -> ContextOfSG0 -> DistWeiRatioList -> Double
+dist4ContextOfSG0ByWeightSum c1 c2 distWeiRatioList = sum distList / fromIntegral ratioTotal
     where
-    distList = map (\x -> fromIntegral (fst x) * snd x) $ zip distWeiRatioList $ distVect4Context0OfSGByIdentity c1 c2
+    distList = map (\x -> fromIntegral (fst x) * snd x) $ zip distWeiRatioList $ distVect4ContextOfSG0ByIdentity c1 c2
     ratioTotal = sum distWeiRatioList
 
 {- Arithmetically meaned distance between two StruGenes.
  -}
 dist4StruGeneByArithMean :: StruGene -> StruGene -> Double
 dist4StruGeneByArithMean s1 s2 = (\x-> x / 6.0) $ sum (distVect4StruGeneByIdentity s1 s2)
+
+{- Resolve ambiguities by StruGene0 samples.
+ - sample: The sample to be resolved.
+ - struGene0Samples: Basic set of StruGene0 samples
+ - Algo.:
+ -   (1) Construct context of given sample, and extract the correct disambiguation policy;
+ -   (2) Extract contexts of all samples in basic set;
+ -   (3) Calculate all distances between the given context with all contexts of all samples in basic set;
+ -   (4) Find disambiguation policy of sample with minimal distance;
+ -   (5) Return tuple of the policy predicted by sample with minimal distance and the correct target policy.
+ -}
+syntaxDisambigOnStruGene0BySampleSimOnIdentity :: StruGene0Sample -> [StruGene0Sample] -> IO (Prior, Prior)
+syntaxDisambigOnStruGene0BySampleSimOnIdentity _ [] = error "syntaxDisambigOnStruGene0BySampleSimOnIdentity: Sample set is empty."
+syntaxDisambigOnStruGene0BySampleSimOnIdentity sample struGene0Samples = do
+    let le = snd7 sample                  -- LeftExtend0
+        lo = thd7 sample                  -- LeftOver0
+        ro = fth7 sample                  -- RightOver0
+        re = fif7 sample                  -- RightExtend0
+        ot = sth7 sample                  -- OverType
+        pri = svt7 sample                 -- Prior
+        contextOfSG0 = (le,lo,ro,re,ot)
+
+        contextOfSG0s = map (\x -> (snd7 x, thd7 x, fth7 x, fif7 x, sth7 x)) struGene0Samples
+
+    confInfo <- readFile "Configuration"
+    let wle = read (getConfProperty "wle" confInfo) :: Int
+        wlo = read (getConfProperty "wlo" confInfo) :: Int
+        wro = read (getConfProperty "wro" confInfo) :: Int
+        wre = read (getConfProperty "wre" confInfo) :: Int
+        wot = read (getConfProperty "wot" confInfo) :: Int
+        distWeiRatioList = [wle, wlo, wro, wre, wot]
+        distList = map (\x -> dist4ContextOfSG0ByWeightSum contextOfSG0 x distWeiRatioList) contextOfSG0s
+        minDist = minimum distList
+        idx = elemIndex minDist distList
+        idx' = case idx of
+                 Just x -> x
+                 Nothing -> -1                     -- Impossible position
+        pri' = svt7 (struGene0Samples!!idx')       -- Prior
+    return (pri', pri)
 
 {- 初始化随机选取1个点,初始定k=200
 
@@ -745,7 +793,6 @@ findFinalCluster4AllSamplesWithoutPri tblName clusterMap origCentreList kVal iNo
 {- Read a value from input stream [MySQLValue], change it into a StruGeneSample value, append it
  - to existed StruGeneSample list, then read the next until read Nothing.
  - Here [MySQLValue] is [MySQLText, MySQLText, MySQLText, MySQLText, MySQLInt8, MySQLText].
- - There does not exist StruGene sample table in database, so the following function is useless.
  -}
 readStreamByStruGene :: [StruGeneSample] -> S.InputStream [MySQLValue] -> IO [StruGeneSample]
 readStreamByStruGene es is = do
@@ -757,6 +804,27 @@ readStreamByStruGene es is = do
                                                     readPhraSynListFromStr (fromMySQLText (x!!4)),
                                                     fromMySQLInt8 (x!!5),
                                                     readPriorFromStr (fromMySQLText (x!!6)))]) is
+        Nothing -> return es
+
+{- Read a value from input stream [MySQLValue], change it into a StruGene0Sample value, append it
+ - to existed StruGene0Sample list, then read the next until read Nothing.
+ - Here [MySQLValue] is [MySQLText, MySQLText, MySQLText, MySQLText, MySQLInt8, MySQLText],
+ - StruGene0Sample :: (SIdx, LeftExtend, LeftOver, RightOver, RightExtend, OverType, Prior)
+ -}
+readStreamByStruGene0 :: [StruGene0Sample] -> S.InputStream [MySQLValue] -> IO [StruGene0Sample]
+readStreamByStruGene0 es is = do
+    S.read is >>= \case                                         -- Dumb element 'case' is an array with type [MySQLValue]
+        Just x -> readStreamByStruGene0 (es ++ [(fromMySQLInt32 (x!!0)
+                                               , readPhraSyn0ListFromStr (fromMySQLText (x!!1))
+                                               , readPhraSyn0FromStr (fromMySQLText (x!!2))
+                                               , readPhraSyn0FromStr (fromMySQLText (x!!3))
+                                               , readPhraSyn0ListFromStr (fromMySQLText (x!!4))
+                                               , fromMySQLInt8 (x!!5)
+                                               , case (priorWithHighestFreq (stringToCTPList (fromMySQLText (x!!6)))) of
+                                                   Just x -> x
+                                                   Nothing -> error ("readStreamByStruGene0: Exception: clauTagPrior = " ++ fromMySQLText (x!!6))
+                                               )]
+                                        ) is
         Nothing -> return es
 
 {- Read a value from input stream [MySQLValue], change it into a StruGeneSample value, append it
@@ -1579,21 +1647,61 @@ clusteringAnalysis funcIndex = do
          ct1 <- getCurrentTime                                                  -- Get current time
          confInfo <- readFile "Configuration"
          let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+             phrasyn_model = getConfProperty "phrasyn_model" confInfo
+             store_csg_sim = getConfProperty "store_csg_sim" confInfo
+             csg_sim_tbl = getConfProperty "csg_sim_tbl" confInfo
+             phra_gram_dist_algo = getConfProperty "phra_gram_dist_algo" confInfo
+             overlap_type_dist_algo = getConfProperty "overlap_type_dist_algo" confInfo
+             strugene_context_dist_algo = getConfProperty "strugene_context_dist_algo" confInfo
+         putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
+         putStrLn $ " phrasyn_model: " ++ phrasyn_model
+         putStrLn $ " store_csg_sim: " ++ store_csg_sim
+         putStrLn $ " csg_sim_tbl: " ++ csg_sim_tbl
+         putStrLn $ " phra_gram_dist_algo: " ++ phra_gram_dist_algo
+         putStrLn $ " overlap_type_dist_algo: " ++ overlap_type_dist_algo
+         putStrLn $ " strugene_context_dist_algo: " ++ strugene_context_dist_algo
 
-         case syntax_ambig_resol_model of
-           x | elem x ["stru_gene_202501"] -> do
-             let phra_gram_dist_algo = getConfProperty "phra_gram_dist_algo" confInfo
-             let overlap_type_dist_algo = getConfProperty "overlap_type_dist_algo" confInfo
-             let strugene_context_dist_algo = getConfProperty "strugene_context_dist_algo" confInfo
+         contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
+         if contOrNot == "c"
+           then
+             case syntax_ambig_resol_model of
+               x | isPrefixOf "stru_gene_phrasyn0_" x -> do                          -- 202408, 202412, 202501
+                 startIdx <- getNumUntil "Please input index number of start StruGene sample [Return for 1]: " [0 ..]
+                 endIdx <- getNumUntil "Please input index number of end StruGene sample [Return for last]: " [0 ..]
+                 context02ClauTagPriorBase <- getContext02ClauTagPriorBase startIdx endIdx   -- [(ContextOfSG0, ClauTagPrior)]
 
-             putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
-             putStrLn $ " phra_gram_dist_algo: " ++ phra_gram_dist_algo
-             putStrLn $ " overlap_type_dist_algo: " ++ overlap_type_dist_algo
-             putStrLn $ " strugene_context_dist_algo: " ++ strugene_context_dist_algo
+                 let numOfStruGene0Sample = length context02ClauTagPriorBase
+                 sIdx <- getNumUntil "Please select one sample whose context will compare with others' contexts [Return for 1]: " [1 .. numOfStruGene0Sample]
+                 let contextOfSG0 = fst (context02ClauTagPriorBase!!(sIdx-1))             -- ContextOfSG0
+                 putStrLn $ "Its context is: " ++ show contextOfSG0
 
-             contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
-             if contOrNot == "c"
-               then do
+                 contextOfSG0PairSimTuple <- getOneToAllContextOfSG0Sim contextOfSG0 context02ClauTagPriorBase
+                                  -- ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG0, ContextOfSG0), SimDeg)])
+                 let origSimList = fst contextOfSG0PairSimTuple
+                 let contextOfSG0Pair2SimList = snd contextOfSG0PairSimTuple
+                 let origSimListWithDist = zip origSimList (map snd contextOfSG0Pair2SimList)
+                 let origSimMatrixWithDist = fromLists $ map (\x -> [(fst5 . fst) x, (snd5 . fst) x, (thd5 . fst) x, (fth5 . fst) x, (fif5 . fst) x, snd x]) origSimListWithDist
+
+                 let numOfContextOfSG0Pair = length contextOfSG0Pair2SimList              -- Int, Number of rows.
+                 let listOfContextOfSG0WithSim1 = filter (\x -> snd x == 1.0) contextOfSG0Pair2SimList              -- [(ContextOfSG0, ContestOfSG0)]
+                 putStrLn $ "Num. of ClauTagPrior context pairs: " ++ show numOfContextOfSG0Pair
+                 putStrLn $ "Num. of ClauTagPrior context pairs with similarity degree 1.0: " ++ show (length listOfContextOfSG0WithSim1)
+
+                 if (numOfContextOfSG0Pair > 10)
+                   then do
+                     putStrLn $ " The first 10 rows of origSimMatrixWithDist (Last column is " ++ strugene_context_dist_algo ++ " distance): "
+                     disp 4 (origSimMatrixWithDist ?? (Take 10, Drop 0))
+                     putStrLn " The first 10 rows of contextOfSG0Pair2SimList: "
+                     dispList 1 (take 10 contextOfSG0Pair2SimList)
+                   else do
+                     putStrLn $ " origSimMatrixWithDist (Last column is " ++ strugene_context_dist_algo ++ " distance): "
+                     disp 4 origSimMatrixWithDist
+                     putStrLn " contextOfSG0Pair2SimList: "
+                     dispList 1 contextOfSG0Pair2SimList
+                 ct2 <- getCurrentTime
+                 putStrLn $ "Elapsed time: " ++ show (diffUTCTime ct2 ct1)
+
+               x | isPrefixOf "stru_gene_phrasyn_" x -> do
                  startIdx <- getNumUntil "Please input index number of start StruGene sample [Return for 1]: " [0 ..]
                  endIdx <- getNumUntil "Please input index number of end StruGene sample [Return for last]: " [0 ..]
                  context2ClauTagPriorBase <- getContext2ClauTagPriorBase startIdx endIdx             -- [(ContextOfSG, ClauTagPrior)]
@@ -1628,18 +1736,11 @@ clusteringAnalysis funcIndex = do
                      dispList 1 contextOfSGPair2SimList
                  ct2 <- getCurrentTime
                  putStrLn $ "Elapsed time: " ++ show (diffUTCTime ct2 ct1)
-               else putStrLn "Operation was canceled."
-           x | elem x ["stru_gene3a_phrasyn0_202509"] -> do
-             let decay_subtree_kernel = getConfProperty "decay_subtree_kernel" confInfo
-             let strugene_context_dist_algo = getConfProperty "strugene_context_dist_algo" confInfo
 
-             putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
-             putStrLn $ " strugene_context_dist_algo: " ++ strugene_context_dist_algo
-             putStrLn $ " decay_subtree_kernel: " ++ decay_subtree_kernel
+               x | isPrefixOf "stru_gene3a_phrasyn0_" x -> do
+                 let decay_subtree_kernel = getConfProperty "decay_subtree_kernel" confInfo
+                 putStrLn $ " decay_subtree_kernel: " ++ decay_subtree_kernel
 
-             contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
-             if contOrNot == "c"
-               then do
                  startIdx <- getNumUntil "Please input index number of start StruGene sample [Return for 1]: " [0 ..]
                  endIdx <- getNumUntil "Please input index number of end StruGene sample [Return for last]: " [0 ..]
                  contextOfSG3a02ClauTagPriorBase <- getContextOfSG3a02ClauTagPriorBase startIdx endIdx       -- [(ContextOfSG3a0, ClauTagPrior)]
@@ -1674,8 +1775,10 @@ clusteringAnalysis funcIndex = do
                      dispList 1 contextOfSG3a0Pair2SimList
                  ct2 <- getCurrentTime
                  putStrLn $ "Elapsed time: " ++ show (diffUTCTime ct2 ct1)
-               else putStrLn "Operation was canceled."
 
+               _ -> putStrLn $ "NOT supported syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
+
+          else putStrLn "Operation was canceled."
         else putStr ""
 
 {- 13(D). Get similarity degrees between one ClauTagPrior context to every context of StruGene (or Strugene3a0) samples.
@@ -1687,22 +1790,63 @@ clusteringAnalysis funcIndex = do
        then do
          confInfo <- readFile "Configuration"
          let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
-         let phra_gram_dist_algo = getConfProperty "phra_gram_dist_algo" confInfo
-         let overlap_type_dist_algo = getConfProperty "overlap_type_dist_algo" confInfo
-         let strugene_context_dist_algo = getConfProperty "strugene_context_dist_algo" confInfo
-         let decay_subtree_kernel = getConfProperty "decay_subtree_kernel" confInfo
+             phra_gram_dist_algo = getConfProperty "phra_gram_dist_algo" confInfo
+             overlap_type_dist_algo = getConfProperty "overlap_type_dist_algo" confInfo
+             strugene_context_dist_algo = getConfProperty "strugene_context_dist_algo" confInfo
+             decay_subtree_kernel = getConfProperty "decay_subtree_kernel" confInfo
+             phrasyn_model = getConfProperty "phrasyn_model" confInfo
 
          putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
          putStrLn $ " phra_gram_dist_algo: " ++ phra_gram_dist_algo
          putStrLn $ " overlap_type_dist_algo: " ++ overlap_type_dist_algo
          putStrLn $ " strugene_context_dist_algo: " ++ strugene_context_dist_algo
          putStrLn $ " decay_subtree_kernel: " ++ decay_subtree_kernel
+         putStrLn $ " phrasyn_model: " ++ phrasyn_model
 
          contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
          if contOrNot == "c"
            then do
              case syntax_ambig_resol_model of
-               x | elem x ["stru_gene_202501"] -> do
+               x | isPrefixOf "stru_gene_phrasyn0_" x -> do                     -- 202408, 202412
+                 startIdx <- getNumUntil "Please input index number of start StruGene sample [Return for 1]: " [0 ..]
+                 endIdx <- getNumUntil "Please input index number of end StruGene sample [Return for last]: " [0 ..]
+                 context02ClauTagPriorBase <- getContext02ClauTagPriorBase startIdx endIdx      -- [(ContextOfSG0, ClauTagPrior)]
+
+                 putStrLn "Please input one StruGene0 context [LeftExtend0, LeftOver0, RightOVer0, RigheExtend0, OverType] to be compared: "
+                 inputStr <- getLine
+                 let contextOfSG0 = readContextOfSG0FromStr inputStr            -- ContextOfSG0
+
+                 contextOfSG0PairSimTuple <- getOneToAllContextOfSG0Sim' contextOfSG0 context02ClauTagPriorBase
+                                 -- ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG0, ContextOfSG0), SimDeg)])
+                 let origSimList = fst contextOfSG0PairSimTuple
+                 let contextOfSG0Pair2SimList = snd contextOfSG0PairSimTuple
+                 let origSimListWithDist = zip origSimList (map snd contextOfSG0Pair2SimList)
+                 let origSimMatrixWithDist = fromLists $ map (\x -> [(fst5 . fst) x, (snd5 . fst) x, (thd5 . fst) x, (fth5 . fst) x, (fif5 . fst) x, snd x]) origSimListWithDist
+
+                 let numOfContextOfSG0Pair = length contextOfSG0Pair2SimList              -- Int, Number of rows.
+                 let listOfContextOfSG0WithSim1 = filter (\x -> snd x == 1.0) contextOfSG0Pair2SimList     -- [(ContextOfSG0, ContestOfSG0)]
+                 putStrLn $ "Num. of ClauTagPrior context pairs: " ++ show numOfContextOfSG0Pair
+                 putStrLn $ "Num. of ClauTagPrior context pairs with similarity degree 1.0: " ++ show (length listOfContextOfSG0WithSim1)
+
+                 context02ClauTagPriorTuple <- findStruGene0SampleByMaxContextSim contextOfSG0 context02ClauTagPriorBase
+                 let sIdx = fst3 context02ClauTagPriorTuple
+                 let simDeg = snd3 context02ClauTagPriorTuple
+                 let context02ClauTagPrior = thd3 context02ClauTagPriorTuple
+                 putStrLn $ "Highest similarity degree " ++ show simDeg ++ " is obtained by No." ++ show sIdx ++ " sample: " ++ show context02ClauTagPrior
+
+                 if (numOfContextOfSG0Pair > 10)
+                   then do
+                     putStrLn $ " The first 10 rows of origSimMatrixWithDist (Last column is " ++ strugene_context_dist_algo ++ " distance): "
+                     disp 4 (origSimMatrixWithDist ?? (Take 10, Drop 0))
+                     putStrLn " The first 10 rows of contextOfSG0Pair2SimList: "
+                     dispList 1 (take 10 contextOfSG0Pair2SimList)
+                   else do
+                     putStrLn $ " origSimMatrixWithDist (Last column is " ++ strugene_context_dist_algo ++ " distance): "
+                     disp 4 origSimMatrixWithDist
+                     putStrLn " contextOfSG0Pair2SimList: "
+                     dispList 1 contextOfSG0Pair2SimList
+
+               x | isPrefixOf "stru_gene_phrasyn_" x -> do                      -- 202501
                  startIdx <- getNumUntil "Please input index number of start StruGene sample [Return for 1]: " [0 ..]
                  endIdx <- getNumUntil "Please input index number of end StruGene sample [Return for last]: " [0 ..]
                  context2ClauTagPriorBase <- getContext2ClauTagPriorBase startIdx endIdx             -- [(ContextOfSG, ClauTagPrior)]
@@ -1850,7 +1994,7 @@ clusteringAnalysis funcIndex = do
          close conn                                   -- Close MySQL connection.
        else putStr ""
 
-{- 18(I). Among StruGene3a samples, calculate similarity degree between every pair of contexts.
+{- 18(12H). Among StruGene3a samples, calculate similarity degree between every pair of contexts.
  - ContextOfSG3a :: (LeftOverTree, RightOverTree)
  -}
     if funcIndex == 18
@@ -1921,7 +2065,7 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
        else putStr ""
 
-{- 19(J). Among StruGene3a0 samples, calculate similarity degree between every pair of contexts.
+{- 19(13H). Among StruGene3a0 samples, calculate similarity degree between every pair of contexts.
  - ContextOfSG3a0 :: (LeftOverTree0, RightOverTree0)
  -}
     if funcIndex == 19
@@ -1990,7 +2134,7 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
        else putStr ""
 
-{- 20(K). From SLR raw samples, get SLR ripe samples.
+{- 20(14H). From SLR raw samples, get SLR ripe samples.
  - slr_raw_sample: [PhraCate] -> [Rule]
  - slr_ripe_sample: [PhraSyn] -> [Rule], [PhraSyn0] -> [Rule], BiTree PhraSyn -> [Rule], and BiTree PhraSyn0 -> [Rule]
  - Every SLR sample includes a collection of phrasal cateories and categorial conversions to be adopted.
@@ -2073,7 +2217,7 @@ clusteringAnalysis funcIndex = do
              let sqlstat = DS.fromString $ "INSERT INTO " ++ slr_ripe_corpus ++ " SET transTag = ?, phrasyn_list_rules = ?, phrasyn0_list_rules = ?, bitree_phrasyn_rules = ?, bitree_phrasyn0_rules = ?"
              oks <- executeMany conn sqlstat vList
              let lastInsertID = getOkLastInsertID (last oks)
-             putStrLn $ " clusteringAnalysis Func. 20(K):: LastInsertID : " ++ show lastInsertID
+             putStrLn $ " clusteringAnalysis Func. 20(14):: LastInsertID : " ++ show lastInsertID
 
              t1 <- getCurrentTime                                               -- UTCTime
              putStrLn $ "\n Total calculating time: " ++ show (diffUTCTime t1 t0)
@@ -2082,7 +2226,7 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
          else putStr ""
 
-{- 21(L). From SLR ripe samples, get inter-value similarity degrees of every PhraSyn's basic attribue.
+{- 21(15H). From SLR ripe samples, get inter-value similarity degrees of every PhraSyn's basic attribue.
  - slr_ripe_corpus: Source of PhraSyns
  - type_sim_tbl: MySQL table storing inter-type similarity degrees
  - tag_sim_tbl: MySQL table storing inter-tag similarity degrees
@@ -2097,12 +2241,14 @@ clusteringAnalysis funcIndex = do
          let tag_sim_tbl = getConfProperty "tag_sim_tbl" confInfo
          let stru_sim_tbl = getConfProperty "stru_sim_tbl" confInfo
          let span_sim_tbl = getConfProperty "span_sim_tbl" confInfo
+         let phrasyn_model = getConfProperty "phrasyn_model" confInfo
 
          putStrLn $ " slr_ripe_corpus: " ++ slr_ripe_corpus
          putStrLn $ " type_sim_tbl: " ++ type_sim_tbl
          putStrLn $ " tag_sim_tbl: " ++ tag_sim_tbl
          putStrLn $ " stru_sim_tbl: " ++ stru_sim_tbl
          putStrLn $ " span_sim_tbl: " ++ span_sim_tbl
+         putStrLn $ " phrasyn_model: " ++ phrasyn_model
 
          startIdx <- getNumUntil "Please input index number of start SLR raw sample [Return for 1]: " [0 ..]
          endIdx <- getNumUntil "Please input index number of end SLR raw sample [Return for last]: " [0 ..]
@@ -2168,7 +2314,7 @@ clusteringAnalysis funcIndex = do
              let sqlstat = DS.fromString $ "INSERT INTO " ++ type_sim_tbl ++ " SET cate1 = ?, cate2 = ?, sim = ?"
              oks <- executeMany conn sqlstat typePair2Sim_vList
              let lastInsertID = getOkLastInsertID (last oks)
-             putStrLn $ " clusteringAnalysis Func. 21(L):: LastInsertID in " ++ type_sim_tbl ++ " " ++ show lastInsertID
+             putStrLn $ " clusteringAnalysis Func. 21(15):: LastInsertID in " ++ type_sim_tbl ++ " " ++ show lastInsertID
 
              let tagPair_vList = map (take 2) tagPair2Sim_vList
              let sqlstat = DS.fromString $ "DELETE FROM " ++ tag_sim_tbl ++ " WHERE tag1 = ? and tag2 = ?"
@@ -2177,7 +2323,7 @@ clusteringAnalysis funcIndex = do
              let sqlstat = DS.fromString $ "INSERT INTO " ++ tag_sim_tbl ++ " SET tag1 = ?, tag2 = ?, sim = ?"
              oks <- executeMany conn sqlstat tagPair2Sim_vList
              let lastInsertID = getOkLastInsertID (last oks)
-             putStrLn $ " clusteringAnalysis Func. 21(L):: LastInsertID in " ++ tag_sim_tbl ++ " " ++ show lastInsertID
+             putStrLn $ " clusteringAnalysis Func. 21(15):: LastInsertID in " ++ tag_sim_tbl ++ " " ++ show lastInsertID
 
              let struPair_vList = map (take 2) struPair2Sim_vList
              let sqlstat = DS.fromString $ "DELETE FROM " ++ stru_sim_tbl ++ " WHERE stru1 = ? and stru2 = ?"
@@ -2186,7 +2332,7 @@ clusteringAnalysis funcIndex = do
              let sqlstat = DS.fromString $ "INSERT INTO " ++ stru_sim_tbl ++ " SET stru1 = ?, stru2 = ?, sim = ?"
              oks <- executeMany conn sqlstat struPair2Sim_vList
              let lastInsertID = getOkLastInsertID (last oks)
-             putStrLn $ " clusteringAnalysis Func. 21(L):: LastInsertID in " ++ stru_sim_tbl ++ " " ++ show lastInsertID
+             putStrLn $ " clusteringAnalysis Func. 21(15):: LastInsertID in " ++ stru_sim_tbl ++ " " ++ show lastInsertID
 
              let spanPair_vList = map (take 2) spanPair2Sim_vList
              let sqlstat = DS.fromString $ "DELETE FROM " ++ span_sim_tbl ++ " WHERE span1 = ? and span2 = ?"
@@ -2195,7 +2341,7 @@ clusteringAnalysis funcIndex = do
              let sqlstat = DS.fromString $ "INSERT INTO " ++ span_sim_tbl ++ " SET span1 = ?, span2 = ?, sim = ?"
              oks <- executeMany conn sqlstat spanPair2Sim_vList
              let lastInsertID = getOkLastInsertID (last oks)
-             putStrLn $ " clusteringAnalysis Func. 21(L):: LastInsertID in " ++ span_sim_tbl ++ " " ++ show lastInsertID
+             putStrLn $ " clusteringAnalysis Func. 21(15):: LastInsertID in " ++ span_sim_tbl ++ " " ++ show lastInsertID
 
              t1 <- getCurrentTime                                               -- UTCTime
              putStrLn $ "\n Total calculating time: " ++ show (diffUTCTime t1 t0)
@@ -2204,7 +2350,7 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
          else putStr ""
 
-{- 22(M). From SLR ripe samples, get inter-value similarity degrees of every PhraSyn0's basic attribue.
+{- 22(16H). From SLR ripe samples, get inter-value similarity degrees of every PhraSyn0's basic attribue.
  - slr_ripe_corpus: Source of PhraSyn0s
  - type_sim_tbl: MySQL table storing inter-type similarity degrees
  - tag_sim_tbl: MySQL table storing inter-tag similarity degrees
@@ -2282,7 +2428,7 @@ clusteringAnalysis funcIndex = do
              let sqlstat = DS.fromString $ "INSERT INTO " ++ type_sim_tbl ++ " SET cate1 = ?, cate2 = ?, sim = ?"
              oks <- executeMany conn sqlstat typePair2Sim_vList
              let lastInsertID = getOkLastInsertID (last oks)
-             putStrLn $ " clusteringAnalysis Func. 21(L):: LastInsertID in " ++ type_sim_tbl ++ " " ++ show lastInsertID
+             putStrLn $ " clusteringAnalysis Func. 22(16):: LastInsertID in " ++ type_sim_tbl ++ " " ++ show lastInsertID
 
              let tagPair_vList = map (take 2) tagPair2Sim_vList
              let sqlstat = DS.fromString $ "DELETE FROM " ++ tag_sim_tbl ++ " WHERE tag1 = ? and tag2 = ?"
@@ -2291,7 +2437,7 @@ clusteringAnalysis funcIndex = do
              let sqlstat = DS.fromString $ "INSERT INTO " ++ tag_sim_tbl ++ " SET tag1 = ?, tag2 = ?, sim = ?"
              oks <- executeMany conn sqlstat tagPair2Sim_vList
              let lastInsertID = getOkLastInsertID (last oks)
-             putStrLn $ " clusteringAnalysis Func. 21(L):: LastInsertID in " ++ tag_sim_tbl ++ " " ++ show lastInsertID
+             putStrLn $ " clusteringAnalysis Func. 22(16):: LastInsertID in " ++ tag_sim_tbl ++ " " ++ show lastInsertID
 
              let struPair_vList = map (take 2) struPair2Sim_vList
              let sqlstat = DS.fromString $ "DELETE FROM " ++ stru_sim_tbl ++ " WHERE stru1 = ? and stru2 = ?"
@@ -2300,7 +2446,111 @@ clusteringAnalysis funcIndex = do
              let sqlstat = DS.fromString $ "INSERT INTO " ++ stru_sim_tbl ++ " SET stru1 = ?, stru2 = ?, sim = ?"
              oks <- executeMany conn sqlstat struPair2Sim_vList
              let lastInsertID = getOkLastInsertID (last oks)
-             putStrLn $ " clusteringAnalysis Func. 21(L):: LastInsertID in " ++ stru_sim_tbl ++ " " ++ show lastInsertID
+             putStrLn $ " clusteringAnalysis Func. 22(16):: LastInsertID in " ++ stru_sim_tbl ++ " " ++ show lastInsertID
+
+             t1 <- getCurrentTime                                               -- UTCTime
+             putStrLn $ "\n Total calculating time: " ++ show (diffUTCTime t1 t0)
+
+             close conn
+           else putStrLn "Operation was canceled."
+         else putStr ""
+
+{- 23(17H). From syntax_ambig_resol_model samples, get inter-value similarity degrees of every PhraSyn0's basic attribue.
+ - syntax_ambig_resol_model: Source of PhraSyn0s
+ - type_sim_tbl: MySQL table storing inter-type similarity degrees
+ - tag_sim_tbl: MySQL table storing inter-tag similarity degrees
+ - stru_sim_tbl:MySQL table storing inter-phrastru similarity degrees
+ -}
+    if funcIndex == 23
+       then do
+         confInfo <- readFile "Configuration"
+         let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+         let type_sim_tbl = getConfProperty "type_sim_tbl" confInfo
+         let tag_sim_tbl = getConfProperty "tag_sim_tbl" confInfo
+         let stru_sim_tbl = getConfProperty "stru_sim_tbl" confInfo
+
+         putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
+         putStrLn $ " type_sim_tbl: " ++ type_sim_tbl
+         putStrLn $ " tag_sim_tbl: " ++ tag_sim_tbl
+         putStrLn $ " stru_sim_tbl: " ++ stru_sim_tbl
+
+         startIdx <- getNumUntil "Please input index number of start sample [Return for 1]: " [0 ..]
+         endIdx <- getNumUntil "Please input index number of end sample [Return for last]: " [0 ..]
+
+         conn <- getConn
+         let sqlstat = DS.fromString $ "SELECT count(*) from " ++ syntax_ambig_resol_model
+         (defs, is) <- query_ conn sqlstat
+         rows <- readStreamByInt64 [] is
+
+         let startIdx' = case startIdx of
+                           0 -> 1
+                           _ -> startIdx
+         let endIdx' = case endIdx of
+                         0 -> head rows
+                         _ -> endIdx
+
+         putStrLn $ "stardIdx = " ++ show startIdx' ++ " , endIdx = " ++ show endIdx'
+
+         contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
+         if contOrNot == "c"
+           then do
+             let sqlstat = DS.fromString $ "CREATE TABLE IF NOT EXISTS " ++ type_sim_tbl ++ " (id SMALLINT UNSIGNED PRIMARY KEY AUTO_INCREMENT, cate1 VARCHAR(100), cate2 VARCHAR(100), sim DOUBLE)"
+             stmt <- prepareStmt conn sqlstat
+             executeStmt conn stmt []
+             let sqlstat = DS.fromString $ "CREATE TABLE IF NOT EXISTS " ++ tag_sim_tbl ++ " (id SMALLINT UNSIGNED PRIMARY KEY AUTO_INCREMENT, tag1 VARCHAR(50), tag2 VARCHAR(50), sim DOUBLE)"
+             stmt <- prepareStmt conn sqlstat
+             executeStmt conn stmt []
+             let sqlstat = DS.fromString $ "CREATE TABLE IF NOT EXISTS " ++ stru_sim_tbl ++ " (id SMALLINT UNSIGNED PRIMARY KEY AUTO_INCREMENT, stru1 VARCHAR(10), stru2 VARCHAR(10), sim DOUBLE)"
+             stmt <- prepareStmt conn sqlstat
+             executeStmt conn stmt []
+             closeStmt conn stmt
+
+             putStrLn "Start to calculate inter-value similarity degrees of every PhraSyn0 attribue ..."
+             t0 <- getCurrentTime                -- UTCTime
+
+             let sqlstat = DS.fromString $ "SELECT id, leftExtend, leftOver, rightOver, rightExtend, clauTagPrior from " ++ syntax_ambig_resol_model ++ " where id >= ? and id <= ?"
+             stmt <- prepareStmt conn sqlstat
+             (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx', toMySQLInt32 endIdx']
+             closeStmt conn stmt
+
+             struGene0Samples <- readStreamByStruGene0 [] is                    -- [StruGene0Sample]
+             let phrasyn0s = concat $ map (\x -> snd7 x ++ [thd7 x] ++ [fth7 x] ++ fif7 x)  struGene0Samples   -- [PhraSyn0]
+             putStrLn $ " clusteringAnalysis Func. 23(N): Num. of PhraSyn0 instances = " ++ show (length phrasyn0s)
+
+             let typePair2Sim = fth4 $ getTypePair2SimFromPS0L phrasyn0s        -- [((Category, Category), SimDeg)]
+             let tagPair2Sim = fth4 $ getTagPair2SimFromPS0L phrasyn0s          -- [((Tag, Tag), SimDeg)]
+             let struPair2Sim = fth4 $ getStruPair2SimFromPS0L phrasyn0s        -- [((PhraStru, PhraStru), SimDeg)]
+
+             let typePair2Sim_vList = map (\((cate1, cate2), simDeg) -> [(toMySQLText . show) cate1, (toMySQLText . show) cate2, toMySQLDouble simDeg]) typePair2Sim
+             let tagPair2Sim_vList = map (\((tag1, tag2), simDeg) -> [toMySQLText tag1, toMySQLText tag2, toMySQLDouble simDeg]) tagPair2Sim
+             let struPair2Sim_vList = map (\((stru1, stru2), simDeg) -> [toMySQLText stru1, toMySQLText stru2, toMySQLDouble simDeg]) struPair2Sim
+
+             let typePair_vList = map (take 2) typePair2Sim_vList
+             let sqlstat = DS.fromString $ "DELETE FROM " ++ type_sim_tbl ++ " WHERE cate1 = ? and cate2 = ?"
+             executeMany conn sqlstat typePair_vList
+
+             let sqlstat = DS.fromString $ "INSERT INTO " ++ type_sim_tbl ++ " SET cate1 = ?, cate2 = ?, sim = ?"
+             oks <- executeMany conn sqlstat typePair2Sim_vList
+             let lastInsertID = getOkLastInsertID (last oks)
+             putStrLn $ " clusteringAnalysis Func. 23(17):: LastInsertID in " ++ type_sim_tbl ++ " " ++ show lastInsertID
+
+             let tagPair_vList = map (take 2) tagPair2Sim_vList
+             let sqlstat = DS.fromString $ "DELETE FROM " ++ tag_sim_tbl ++ " WHERE tag1 = ? and tag2 = ?"
+             executeMany conn sqlstat tagPair_vList
+
+             let sqlstat = DS.fromString $ "INSERT INTO " ++ tag_sim_tbl ++ " SET tag1 = ?, tag2 = ?, sim = ?"
+             oks <- executeMany conn sqlstat tagPair2Sim_vList
+             let lastInsertID = getOkLastInsertID (last oks)
+             putStrLn $ " clusteringAnalysis Func. 23(17):: LastInsertID in " ++ tag_sim_tbl ++ " " ++ show lastInsertID
+
+             let struPair_vList = map (take 2) struPair2Sim_vList
+             let sqlstat = DS.fromString $ "DELETE FROM " ++ stru_sim_tbl ++ " WHERE stru1 = ? and stru2 = ?"
+             executeMany conn sqlstat struPair_vList
+
+             let sqlstat = DS.fromString $ "INSERT INTO " ++ stru_sim_tbl ++ " SET stru1 = ?, stru2 = ?, sim = ?"
+             oks <- executeMany conn sqlstat struPair2Sim_vList
+             let lastInsertID = getOkLastInsertID (last oks)
+             putStrLn $ " clusteringAnalysis Func. 23(17):: LastInsertID in " ++ stru_sim_tbl ++ " " ++ show lastInsertID
 
              t1 <- getCurrentTime                                               -- UTCTime
              putStrLn $ "\n Total calculating time: " ++ show (diffUTCTime t1 t0)
@@ -2854,7 +3104,7 @@ getPhraSynPairSim distAlgo phraSynPairs = do
 getPhraSyn0PairSim :: DistAlgo -> [(PhraSyn0, PhraSyn0)] -> IO ([((PhraSyn0, PhraSyn0), SimDeg)])
 getPhraSyn0PairSim distAlgo phraSyn0Pairs = do
     let numOfPhraSyn0Pair = length phraSyn0Pairs
-    putStrLn $ "getPhraSyn0PairSim: Num. of PhraSyn0 ordered pairs = " ++ show numOfPhraSyn0Pair
+--    putStrLn $ "getPhraSyn0PairSim: Num. of PhraSyn0 ordered pairs = " ++ show numOfPhraSyn0Pair
 
     let phraSyn0List = nub $ (\x -> fst x ++ snd x) $ unzip phraSyn0Pairs     -- [PhraSyn0], used to calculate similarity for every grammatic attribute.
     confInfo <- readFile "Configuration"
@@ -3469,6 +3719,46 @@ getContext2ClauTagPriorBase startIdx endIdx = do
         putStrLn "getContext2ClauTagPriorBase: Value of property 'syntax_ambig_resol_model' does not match any MySQL table."
         return []
 
+{- Reading Prior and its context from the sample database of a certain syntax_ambig_resol_model, such as 'stru_gene_phrasyn0_clcg_20260922'.
+ - If start index and end index are both 0, then all records in sample database will be read.
+ - Context02ClauTagPrior :: (ContextOfSG0, [ClauTagPrior])
+ - Context02ClauTagPriorBase :: [Context02ClauTagPrior]
+ - ContextOfSG0 :: (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType)
+ -}
+getContext02ClauTagPriorBase :: SIdx -> SIdx -> IO [Context02ClauTagPrior]
+getContext02ClauTagPriorBase startIdx endIdx = do
+    confInfo <- readFile "Configuration"                                        -- Read the local configuration file
+    let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
+    case syntax_ambig_resol_model of
+      x | isPrefixOf "stru_gene_phrasyn0_" x -> do
+          let startIdx' = case startIdx of
+                            0 -> 1
+                            _ -> startIdx
+          let sqlstat = DS.fromString $ "select count(*) from " ++ syntax_ambig_resol_model
+          conn <- getConn
+          (defs, is) <- query_ conn sqlstat
+          rows <- readStreamByInt64 [] is
+          close conn
+          let endIdx' = case endIdx of
+                          0 -> head rows
+                          _ -> endIdx
+
+          putStrLn $ "stardIdx = " ++ show startIdx' ++ " , endIdx = " ++ show endIdx'
+
+          putStrLn $ "The source of priors and their contexts is set as: " ++ syntax_ambig_resol_model     -- Display the source of priors and their contexts
+          let sqlstat = DS.fromString $ "select leftExtend, leftOver, rightOver, rightExtend, overType, clauTagPrior from " ++ syntax_ambig_resol_model ++ " where id >= ? and id <= ?"
+          conn <- getConn
+          stmt <- prepareStmt conn sqlstat
+          (defs, is) <- queryStmt conn stmt [toMySQLInt32U startIdx', toMySQLInt32U endIdx']
+          context02ClauTagPriorBase <- readStreamByContext02ClauTagPrior [] is                -- [Context02ClauTagPrior]
+          close conn
+          let context02ClauTagPriorNum = length context02ClauTagPriorBase                     -- The number of Context02OverType samples.
+          putStrLn $ "getContext02ClauTagPriorBase: context02ClauTagPriorNum = " ++ show context02ClauTagPriorNum
+          return context02ClauTagPriorBase
+      _ -> do
+        putStrLn "getContext02ClauTagPriorBase: Value of property 'syntax_ambig_resol_model' does not match any MySQL table."
+        return []
+
 {- Reading Prior and its context from the sample database of a certain syntax_ambig_resol_model, such as 'stru_gene3a_phrasyn0_202509'.
  - If start index and end index are both 0, then all records in sample database will be read.
  - ContextOfSG3a02ClauTagPrior :: (ContextOfSG3a0, [ClauTagPrior])
@@ -3481,7 +3771,7 @@ getContextOfSG3a02ClauTagPriorBase startIdx endIdx = do
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
     let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
     case syntax_ambig_resol_model of
-      x | elem x ["stru_gene3a_phrasyn0_202509"] -> do
+      x | isPrefixOf "stru_gene3a_phrasyn0_" x || isPrefixOf "stru_gene3a0_" x -> do
         let startIdx' = case startIdx of
                           0 -> 1
                           _ -> startIdx
@@ -4201,7 +4491,7 @@ getContextOfSGPairSimWithStaticOT context2ClauTagPriorBase = do
 
 {- Get similarity degrees between one ClauTagPrior context and ALL ClauTagPrior contexts.
  - contextOfSG: A ClauTagPrior context of a certain StruGene sample.
- - context2ClauTagPriorBase: The whole samples of mapping from ContextOfSG to ClauTagPrior, INCLUDING the sample of contextOfSG to its ClauTagPrior.
+ - context2ClauTagPriorBase: All samples mapping from ContextOfSG to ClauTagPrior.
  - otPair2SimList: Similarity degrees between overlapping types calculated by first 500 StruGene samples.
  - origSimList: List of (leSim, loSim, roSim, reSim, otSim), in which every quintuple is corresponding to one tuple (contextOfSG1, contextOfSG2) in contextOfSGPairList.
  -}
@@ -4338,10 +4628,149 @@ getOneToAllContextOfSGSim contextOfSG context2ClauTagPriorBase = do
       "False" -> putStrLn "getOneToAllContextOfSGSim: No database operation."
     return (origSimList, contextOfSGPair2SimList)
 
+{- Get similarity degrees between one ClauTagPrior context and the other ClauTagPrior contexts.
+ - ContextOfSG0: A ClauTagPrior context of a certain StruGene0 sample.
+ - context02ClauTagPriorBase: All samples mapping from ContextOfSG0 to ClauTagPrior.
+ - otPair2SimList: Similarity degrees between overlapping types calculated by first 500 StruGene0 samples.
+ - origSimList: List of (leSim, loSim, roSim, reSim, otSim), in which every quintuple is corresponding to one tuple (contextOfSG1, contextOfSG2) in contextOfSGPairList.
+ - The checked context MUST be in the same set with the others.
+ -}
+getOneToAllContextOfSG0Sim :: ContextOfSG0 -> Context02ClauTagPriorBase -> IO ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG0, ContextOfSG0), SimDeg)])
+getOneToAllContextOfSG0Sim contextOfSG0 context02ClauTagPriorBase = do
+    let contextOfSG0List = nub $ map fst context02ClauTagPriorBase              -- [ContextOfSG0], here there is no repetitive ContextOfSG values.
+        (les, los, ros, res, _) = unzip5 contextOfSG0List                       -- Extract [LeftExtend0], [LeftOver0], [RightOver0] and [RightExtend0].
+        leps = [(fst5 contextOfSG0, y) | y <- les]                              -- [(LeftExtend0, LeftExtend0)]
+        lops = [(snd5 contextOfSG0, y) | y <- los]                              -- [(LeftOver0, LeftOver0)]
+        rops = [(thd5 contextOfSG0, y) | y <- ros]                              -- [(RightOver0, RightOVer0)]
+        reps = [(fth5 contextOfSG0, y) | y <- res]                              -- [(RightExtend0, RightExtend0)]
+
+        lePhraSyn0Pairs = Set.fromList $ [(u, v) | lep <- leps, u <- fst lep, v <- snd lep]   -- Set (PhraSyn0, PhraSyn0)
+        loPhraSyn0Pairs = Set.fromList lops
+        roPhraSyn0Pairs = Set.fromList rops
+        rePhraSyn0Pairs = Set.fromList $ [(u, v) | rep <- reps, u <- fst rep, v <- snd rep]   -- Set (PhraSyn0, PhraSyn0)
+
+        phraSyn0PairSet = Set.union (Set.union (Set.union lePhraSyn0Pairs loPhraSyn0Pairs) roPhraSyn0Pairs) rePhraSyn0Pairs
+        phraSyn0Pairs = nub $ map (\(x,y) -> if (x<=y) then (x,y) else (y,x)) $ Set.toList phraSyn0PairSet     -- [(PhraSyn0, PhraSyn0)]
+                                                                                -- PhraSyn0 order in every pair was rectified.
+    confInfo <- readFile "Configuration"
+    let phra_gram_dist_algo = getConfProperty "phra_gram_dist_algo" confInfo
+    let overlap_type_dist_algo = getConfProperty "overlap_type_dist_algo" confInfo
+
+--    putStrLn $ "phraSyn0Pairs: " ++ show phraSyn0Pairs
+--    putStrLn $ "phraSyn0Pair2SimList: " ++ show (getPhraSyn0PairSim phra_gram_dist_algo phraSyn0Pairs)
+
+    phraSyn0Pair2SimList <- getPhraSyn0PairSim phra_gram_dist_algo phraSyn0Pairs
+    let phraSyn0Pair2SimMap = Map.fromList phraSyn0Pair2SimList
+--    putStrLn $ "phraSyn0Pair2SimMap: " ++ show phraSyn0Pair2SimMap
+
+    let leftExtendList = map fst5 contextOfSG0List                              -- [LeftExtend0]
+    let leftExtend = fst5 contextOfSG0                                          -- LeftExtend0
+    let lePair2SimList = [((leftExtend, y), getPhraSyn0SetSim leftExtend y phraSyn0Pair2SimMap) | y <- leftExtendList]
+                                                                                -- [((LeftExtend0, LeftExtend0), SimDeg)]
+--    putStrLn $ "lePair2SimList: " ++ show lePair2SimList
+
+    let leftOverList = map snd5 contextOfSG0List                                -- [LeftOver0]
+    let leftOver = snd5 contextOfSG0                                            -- LeftOver0
+    let loPair2SimList = [((leftOver, y), case (Map.lookup (leftOver, y) phraSyn0Pair2SimMap) of
+                                            Just x -> x
+                                            Nothing -> case (Map.lookup (y, leftOver) phraSyn0Pair2SimMap) of
+                                                         Just x -> x
+                                                         Nothing -> 0.0
+                          ) | y <- leftOverList]                                -- [((LeftOver0, LeftOver0), SimDeg)]
+--    putStrLn $ "loPair2SimList: " ++ show loPair2SimList
+
+    let rightOverList = map thd5 contextOfSG0List                               -- [RightOver0]
+    let rightOver = thd5 contextOfSG0                                           -- RightOver0
+    let roPair2SimList = [((rightOver, y), case (Map.lookup (rightOver, y) phraSyn0Pair2SimMap) of
+                                             Just x -> x
+                                             Nothing -> case (Map.lookup (y, rightOver) phraSyn0Pair2SimMap) of
+                                                          Just x -> x
+                                                          Nothing -> 0.0
+                          ) | y <- rightOverList]                               -- [((RightOver0, RightOver0), SimDeg)]
+--    putStrLn $ "roPair2SimList: " ++ show roPair2SimList
+
+    let rightExtendList = map fth5 contextOfSG0List                             -- [RightExtend0]
+    let rightExtend = fth5 contextOfSG0                                         -- RightExtend0
+    let rePair2SimList = [((rightExtend, y), getPhraSyn0SetSim rightExtend y phraSyn0Pair2SimMap) | y <- rightExtendList]
+                                                                                -- [((RightExtend0, RightExtend0), SimDeg)]
+--    putStrLn $ "rePair2SimList: " ++ show rePair2SimList
+
+-- Euclidean OverType value similarities are calculated by using the first 500 samples of stru_gene_phrasyn0_202408,
+-- Manhattan OverType value similarities are calculated by using the first 500 samples of stru_gene_phrasyn0_202412.
+    let otPair2SimList = case overlap_type_dist_algo of
+                           "Euclidean" -> [((1,1),1.0),((1,2),7.3351553900482406e-3),((1,3),4.8666647227816856e-2),((1,4),3.3917793725912755e-2),((1,5),0.4247127394531829)
+                                          ,((2,2),1.0),((2,3),0.11777246281776142),((2,4),0.1761503383674159),((2,5),1.0017916991325765e-2)
+                                          ,((3,3),1.0),((3,4),0.5887136000291061),((3,5),7.134132733982824e-2)
+                                          ,((4,4),1.0),((4,5),5.1362972267575656e-2)
+                                          ,((5,5),1.0)]
+                           "Manhattan" -> [((1,1),1.0),((1,2),4.470173439533701e-2),((1,3),0.20418481026327456),((1,4),0.16004358484296605),((1,5),0.12951425063877822)
+                                          ,((2,2),1.0),((2,3),0.14760105015849836),((2,4),0.21749622640726418),((2,5),9.390008726364139e-3)
+                                          ,((3,3),1.0),((3,4),0.5220146998431232),((3,5),5.141417139299777e-2)
+                                          ,((4,4),1.0),((4,5),4.3757227872407406e-2)
+                                          ,((5,5),1.0)]
+    let contextOfSG0PairList = [(contextOfSG0, y) | y <- contextOfSG0List]         -- [(ContextOfSG0, ContextOfSG0)]
+    let csgIdx = case (elemIndex contextOfSG0 contextOfSG0List) of
+                   Just idx -> idx
+                   Nothing -> error "getOneToAllContextOfSG0Sim: contextOfSG0 index in contextOfSG0List was NOT found."
+    let contextOfSG0IdxPairList = zip (repeat (csgIdx + 1)) [1 .. length contextOfSG0List]      -- [(SIdx, SIdx)]
+
+    let numOfContextOfSG0Pair = length contextOfSG0PairList
+    let origSimList = [(getSimDegFromAttPair2Sim (fst5 contextOfSG0) (fst5 y) lePair2SimList
+                      , getSimDegFromAttPair2Sim (snd5 contextOfSG0) (snd5 y) loPair2SimList
+                      , getSimDegFromAttPair2Sim (thd5 contextOfSG0) (thd5 y) roPair2SimList
+                      , getSimDegFromAttPair2Sim (fth5 contextOfSG0) (fth5 y) rePair2SimList
+                      , getSimDegFromAttPair2Sim (fif5 contextOfSG0) (fif5 y) otPair2SimList
+                       ) | y <- contextOfSG0List]
+
+    let strugene_context_dist_algo = getConfProperty "strugene_context_dist_algo" confInfo
+    let simList = case strugene_context_dist_algo of
+                    "Euclidean" -> [sqrt (sum [les * les, los * los, ros * ros, res * res, ots * ots] / 5.0) | (les,los,ros,res,ots) <- origSimList]
+                    "Manhattan" -> [(sum [les, los, ros, res, ots] / 5.0) | (les,los,ros,res,ots) <- origSimList]
+    let contextOfSG0Pair2SimList = zip contextOfSG0PairList simList               -- [((ContextOfSG0, ContextOfSG0), SimDeg)]
+
+    let contextOfSG0IdxPair2SimList = filter (\((id1, id2), _) -> id1 <= id2) $ zip contextOfSG0IdxPairList simList
+                             -- [((SIdx, SIdx), SimDeg)], upper triangular matrix.
+
+    let store_csg_sim = getConfProperty "store_csg_sim" confInfo
+    let csg_sim_tbl = getConfProperty "csg_sim_tbl" confInfo
+    case store_csg_sim of
+      "True" -> do
+        conn <- getConn
+        let sqlstat = DS.fromString $ "CREATE TABLE IF NOT EXISTS " ++ csg_sim_tbl ++ " (id INT UNSIGNED PRIMARY KEY AUTO_INCREMENT, contextofsg1idx SMALLINT UNSIGNED, contextofsg2idx SMALLINT UNSIGNED, sim FLOAT)"
+        stmt <- prepareStmt conn sqlstat
+        executeStmt conn stmt []
+        closeStmt conn stmt
+
+        let csgSimList = map (\((csg1idx, csg2idx), sim) -> [toMySQLInt16U csg1idx, toMySQLInt16U csg2idx, toMySQLFloat (double2Float sim)]) contextOfSG0IdxPair2SimList
+        forM_ csgSimList $ \[csg1idx, csg2idx, sim] -> do
+          let sqlstat = DS.fromString $ "SELECT id FROM " ++ csg_sim_tbl ++ " where contextofsg1idx = ? and contextofsg2idx = ?"
+          stmt <- prepareStmt conn sqlstat
+          (_, is) <- queryStmt conn stmt [csg1idx, csg2idx]
+          rows <- S.toList is                                 -- [[MySQLValue]]
+          closeStmt conn stmt
+          if rows == []
+            then do             -- Not hit
+              let sqlstat = DS.fromString $ "INSERT INTO " ++ csg_sim_tbl ++ " SET contextofsg1idx = ?, contextofsg2idx = ?, sim = ?"
+              stmt <- prepareStmt conn sqlstat
+              ok <- executeStmt conn stmt [csg1idx, csg2idx, sim]
+              putStrLn $ "getOneToAllContextOfSG0Sim: LastInsertID : " ++ show (getOkLastInsertID ok)
+              closeStmt conn stmt
+            else if length rows == 1
+                   then do      -- Hit
+                     let sqlstat = DS.fromString $ "UPDATE " ++ csg_sim_tbl ++ " SET sim = ? where id = ?"
+                     stmt <- prepareStmt conn sqlstat
+                     ok <- executeStmt conn stmt [sim, (rows!!0)!!0]
+                     putStrLn $ "getOneToAllContextOfSG0Sim: Update record whose id is " ++ show (fromMySQLInt32U ((rows!!0)!!0))
+                     closeStmt conn stmt
+                   else error $ "getOneToAllContextOfSG0Sim: More than one time of hitting on (" ++ (show . fromMySQLInt16U) csg1idx ++ ", " ++ (show . fromMySQLInt16U) csg2idx ++ ")"
+        close conn                                   -- Close MySQL connection.
+      "False" -> putStr ""                           -- putStrLn "getOneToAllContextOfSG0Sim: No database operation."
+    return (origSimList, contextOfSG0Pair2SimList)
+
 {- Get similarity degrees between one ClauTagPrior context and ALL ClauTagPrior contexts.
  - contextOfSG: A ClauTagPrior context
  - context2ClauTagPriorBase: All samples of mapping from ContextOfSG to ClauTagPrior
- - contextOfSG can belong to context2ClauTagPriorBase or NOT.
+ - The checked context may be not in the same set with the others.
  -}
 getOneToAllContextOfSGSim' :: ContextOfSG -> Context2ClauTagPriorBase -> IO ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG, ContextOfSG), SimDeg)])
 getOneToAllContextOfSGSim' contextOfSG context2ClauTagPriorBase = do
@@ -4352,6 +4781,21 @@ getOneToAllContextOfSGSim' contextOfSG context2ClauTagPriorBase = do
         let context2ClauTagPriorBase' = (contextOfSG, []) : context2ClauTagPriorBase     -- Insert contextOfSG at the head position of contextOfSGList
         contextOfSGPairSimTuple <- getOneToAllContextOfSGSim contextOfSG context2ClauTagPriorBase'
         return (tail (fst contextOfSGPairSimTuple), tail (snd contextOfSGPairSimTuple))
+
+{- Get similarity degrees between one ClauTagPrior context and ALL ClauTagPrior contexts.
+ - contextOfSG0: A ClauTagPrior context
+ - context02ClauTagPriorBase: All samples of mapping from ContextOfSG0 to ClauTagPrior
+ - contextOfSG0 can belong to context02ClauTagPriorBase or NOT.
+ -}
+getOneToAllContextOfSG0Sim' :: ContextOfSG0 -> Context02ClauTagPriorBase -> IO ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG0, ContextOfSG0), SimDeg)])
+getOneToAllContextOfSG0Sim' contextOfSG0 context02ClauTagPriorBase = do
+    let contextOfSG0List = map fst context02ClauTagPriorBase                      -- [ContextOfSG0]
+    if (elem contextOfSG0 contextOfSG0List)
+      then getOneToAllContextOfSG0Sim contextOfSG0 context02ClauTagPriorBase
+      else do
+        let context02ClauTagPriorBase' = (contextOfSG0, []) : context02ClauTagPriorBase     -- Insert contextOfSG0 at the head position of contextOfSG0List
+        contextOfSG0PairSimTuple <- getOneToAllContextOfSG0Sim contextOfSG0 context02ClauTagPriorBase'
+        return (tail (fst contextOfSG0PairSimTuple), tail (snd contextOfSG0PairSimTuple))
 
 {- Get similarity degrees between one ClauTagPrior context and ALL ClauTagPrior contexts.
  - contextOfSG3a0: A ClauTagPrior context of a certain StruGene3a0 sample.
@@ -4371,8 +4815,8 @@ getOneToAllContextOfSG3a0Sim contextOfSG3a0 contextOfSG3a02ClauTagPriorBase = do
     confInfo <- readFile "Configuration"
 
 --    let phra_gram_dist_algo = getConfProperty "phra_gram_dist_algo" confInfo
---    phraSyn0PairSim <- getPhraSyn0PairSim phra_gram_dist_algo phraSyn0Pairs
---    let phraSyn0Pair2SimMap = Map.fromList phraSyn0PairSim
+--    phraSyn0Pair2SimList <- getPhraSyn0PairSim phra_gram_dist_algo phraSyn0Pairs
+--    let phraSyn0Pair2SimMap = Map.fromList phraSyn0Pair2SimList
 
     let decay_subtree_kernel = getConfProperty "decay_subtree_kernel" confInfo
     let decay = read decay_subtree_kernel :: Double
@@ -4487,6 +4931,36 @@ findStruGeneSampleByMaxContextSim contextOfSG context2ClauTagPriorBase = do
         let idx' = maybe (-1) (+0) idx
         return $ (idx' + 1, maxSim, context2ClauTagPriorBase!!idx')         -- SIdx values are from 1 to begin.
 
+{- Given one StruGene0 context, get the ClauTagPrior of StruGene0 sample whose context is most similar to that StruGene0 context.
+ - contextOfSG0: A ClauTagPrior context.
+ - context02ClauTagPriorBase: All samples of mapping from ContextOfSG0 to ClauTagPrior.
+ - ContextOfSG0Pair2Sim :: ((ContextOfSG0, ContextOfSG0), simDeg)
+ - Algorithms:
+ -   If hit a StruGene0 context, return the context corresponding Context02ClauTagPrior value;
+ -   Otherwise, return the first element among all elements with the highest similarity degree in Context02ClauTagPrior list.
+ -}
+findStruGene0SampleByMaxContextSim :: ContextOfSG0 -> Context02ClauTagPriorBase -> IO (SIdx, SimDeg, Context02ClauTagPrior)
+findStruGene0SampleByMaxContextSim contextOfSG0 context02ClauTagPriorBase = do
+    let contextOfSG0List = map fst context02ClauTagPriorBase                  -- [ContextOfSG0]
+    if elem (contextOfSG0) contextOfSG0List
+      then do                                                                 -- Hit the context of a certain sample
+        putStrLn "findStruGene0SampleByMaxContextSim: Hit a sample."
+        let idx = elemIndex (contextOfSG0) contextOfSG0List                   -- Find its position
+        let idx' = maybe (-1) (+0) idx                                        -- '-1' is impossible.
+        return $ (idx' + 1, 1.0, context02ClauTagPriorBase!!idx')             -- Similarity degree is 1.0 when hitting happens.
+      else do
+--        putStrLn $ "findStruGene0SampleByMaxContextSim: Missing contextOfSG0: " ++ show contextOfSG0
+        let context02ClauTagPriorBase' = (contextOfSG0, []) : context02ClauTagPriorBase     -- Insert contextOfSG0 at the head position of contextOfSG0List
+        contextOfSG0PairSimTuple' <- getOneToAllContextOfSG0Sim contextOfSG0 context02ClauTagPriorBase'
+                      -- ([(SimDeg, SimDeg, SimDeg, SimDeg, SimDeg)], [((ContextOfSG0, ContextOfSG0), SimDeg)])
+        let contextOfSG0PairSimTuple = (tail (fst contextOfSG0PairSimTuple'), tail (snd contextOfSG0PairSimTuple'))
+        let contextOfSG0Pair2SimList = snd contextOfSG0PairSimTuple           -- [((ContextOfSG0, ContextOfSG0), SimDeg)]
+        let simDegList = map snd contextOfSG0Pair2SimList                     -- [SimDeg]
+        let maxSim = maximum simDegList                                       -- 1.0 is impossible.
+        let idx = elemIndex maxSim simDegList                                 -- Use the first element with maximum
+        let idx' = maybe (-1) (+0) idx
+        return $ (idx' + 1, maxSim, context02ClauTagPriorBase!!idx')          -- SIdx values are from 1 to begin.
+
 {- Given one StruGene3a0 context, get the ClauTagPrior of StruGene3a0 sample whose context is most similar to that StruGene3a0 context.
  - contextOfSG3a0: A ClauTagPrior context.
  - contextOfSG3a02ClauTagPriorBase: All samples of mapping from ContextOfSG3a0 to ClauTagPrior.
@@ -4505,7 +4979,7 @@ findStruGene3a0SampleByMaxContextSim contextOfSG3a0 contextOfSG3a02ClauTagPriorB
         let idx' = maybe (-1) (+0) idx                                             -- '-1' is impossible.
         return $ (idx' + 1, 1.0, contextOfSG3a02ClauTagPriorBase!!idx')            -- Similarity degree is 1.0 when hitting happens.
       else do
-        putStrLn $ "findStruGene3a0SampleByMaxContextSim: Missing contextOfSG3a0: " ++ show contextOfSG3a0
+--        putStrLn $ "findStruGene3a0SampleByMaxContextSim: Missing contextOfSG3a0: " ++ show contextOfSG3a0
         let contextOfSG3a02ClauTagPriorBase' = (contextOfSG3a0, []) : contextOfSG3a02ClauTagPriorBase     -- Insert contextOfSG3a0 at the head position of contextOfSGList
         contextOfSG3a0PairSimTuple' <- getOneToAllContextOfSG3a0Sim contextOfSG3a0 contextOfSG3a02ClauTagPriorBase'
         let contextOfSG3a0PairSimTuple = (tail (fst contextOfSG3a0PairSimTuple'), tail (snd contextOfSG3a0PairSimTuple'))
@@ -4558,6 +5032,7 @@ readStaticTypePair2Sim = do
     let sqlStr = "SELECT * FROM " ++ type_sim_tbl
     (_, is) <- query_ conn (DS.fromString sqlStr)
     rows <- S.toList is
+    close conn
     let typePair2Sim = map (\x -> (((getCateFromString . fromMySQLText) (x!!1), (getCateFromString . fromMySQLText) (x!!2)),  fromMySQLDouble (x!!3))) rows
     return typePair2Sim
 
@@ -4570,6 +5045,7 @@ readStaticTagPair2Sim = do
     let sqlStr = "SELECT * FROM " ++ tag_sim_tbl
     (_, is) <- query_ conn (DS.fromString sqlStr)
     rows <- S.toList is
+    close conn
     let tagPair2Sim = map (\x -> ((fromMySQLText (x!!1), fromMySQLText (x!!2)),  fromMySQLDouble (x!!3))) rows
     return tagPair2Sim
 
@@ -4582,6 +5058,7 @@ readStaticStruPair2Sim = do
     let sqlStr = "SELECT * FROM " ++ stru_sim_tbl
     (_, is) <- query_ conn (DS.fromString sqlStr)
     rows <- S.toList is
+    close conn
     let struPair2Sim = map (\x -> ((fromMySQLText (x!!1), fromMySQLText (x!!2)),  fromMySQLDouble (x!!3))) rows
     return struPair2Sim
 

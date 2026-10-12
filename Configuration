@@ -65,16 +65,27 @@ phrasyn_model:phrasyn0
 # Possible values of this property:
 #   - stru_gene
 #   - ambi_resol1
-#   - stru_gene_202408
-#   - stru_gene_202412
-#   - stru_gene_202501
+#   - stru_gene_phrasyn0_202408
+#   - stru_gene_phrasyn0_202412
+#   - stru_gene_phrasyn0_clcg_20260922
+#   - stru_gene_phrasyn_202501
 #   - treebank_clust_res_k200_s18000_sg_aa
 #   - stru_gene3_202508
 #   - stru_gene3a_202508
 #   - stru_gene3a_phrasyn0_202509
 #   - stru_gene3a_phrasyn0_20260129
+#   - stru_gene3a0_clcg_20260927
 #   - stru_gene3a0s_20260817
-syntax_ambig_resol_model:stru_gene_phrasyn0_clcg_20260922
+syntax_ambig_resol_model:stru_gene3a0_clcg_20260927
+
+# The method finding most similiar sample of StruGene context
+# T0-Q-Q-WANG: Type 0 grammatical attribute identity
+# T0-X-Y-ZHAO: Type 0 grammatical attribute concurrence
+# T3-H-DONG: Type 3 overlapping tree with LeftExtend and RightExtend
+# T3a-H-DONG: Type 3a overlapping tree without LeftExtend and RightExtend
+# T3a0-H-DONG: Type 3a0 overlapping tree without LeftExtend and RightExtend, besides using PhraSyn0
+# T3a0s-Q-J-WANG: Type 3a0s overlapping tree without LeftExtend and RightExtend, besides using PhraSyn0 and logic semantics
+max_sim_contextofsg_algo:T3a0-H-DONG
 
 # Category ambiguity resolution model also is the name of MySQL table storing the samples of that model.
 # Possible values of this property:
@@ -89,7 +100,7 @@ cate_ambig_resol_model:slr_corpus_20260817
 # When NOT hope to update syntax or category ambiguity resolution samples in database, set this switch as Off.
 # Now, category ambiguity resolution model SLR samples are stored with treebank created by parsing with scripts.
 tree_target_update_switch:Off
-syntax_ambig_resol_sample_update_switch:On
+syntax_ambig_resol_sample_update_switch:Off
 category_ambig_resol_sample_update_switch:Off
 
 # Distance Algo. for phrasal grammar aspects, overlapping types, and StruGene contexts.
@@ -192,13 +203,14 @@ defaultEndIdx:200
 # '19464' is for stru_gene3_202508
 # '14699' is for stru_gene3a_phrasyn0_202509
 # 'type_sim_for_phrasyn_from_slr_corpus_202509' is for phrasyn from slr_corpus_202509
-type_sim_tbl:type_sim_for_phrasyn_from_slr_corpus_202509
+# 'type_sim_for_clcg_strugene0_20260923' is for stru_gene_phrasyn0_clcg_20260922
+type_sim_tbl:type_sim_for_clcg_strugene0_20260923
 
 # Table names of storing similarity degrees between grammatic rules.
-tag_sim_tbl:tag_sim_for_phrasyn_from_slr_corpus_202509
+tag_sim_tbl:tag_sim_for_clcg_strugene0_20260923
 
 # Table names of storing similarity degrees between phrasal structures.
-stru_sim_tbl:stru_sim_for_phrasyn_from_slr_corpus_202509
+stru_sim_tbl:stru_sim_for_clcg_strugene0_20260923
 
 # Table names of storing similarity degrees between phrasal spans.
 span_sim_tbl:span_sim_for_phrasyn_from_slr_corpus_202509
@@ -212,13 +224,14 @@ phrasyn_sim_tbl:phrasyn_sim_from_slr_corpus_202509
 # Table names of storing similarity degrees between PhraSyn0 samples.
 # Possible options:
 # - phrasyn0_sim_from_slr_corpus_202509_test
-phrasyn0_sim_tbl:phrasyn0_sim_from_slr_corpus_202509
+phrasyn0_sim_tbl:phrasyn0_sim_from_clcg_strugene0_20260923
 
 # Table names of storing similarity degrees between samples of ContextOfSG, ContextOfSG3a, or other StruGene context model.
-csg_sim_tbl:csg3a_phrasyn0_sim_202509
+# csg3a_phrasyn0_sim_202509
+csg_sim_tbl:csg_sim_for_clcg_phrasyn0_20260923
 
 # Whether storing similarity degrees between ContextOfSG samples.
-store_csg_sim:True
+store_csg_sim:False
 
 # Chunk, namely a batch of rows which are written into MySQL table every SQL writing operation.
 csg_sim_rows_chunk:80000
@@ -291,8 +304,9 @@ earlyStopPatience:10
 
 # Index number range of the used syntax ambiguity resolution model samples.
 # Number of samples in stru_gene3a0s_20260817 is 13857.
+# Number of samples in stru_gene_phrasyn0_clcg_20260922 is 11262.
 syntax_resol_sample_startId:1
-syntax_resol_sample_endId:2000
+syntax_resol_sample_endId:11262
 
 # Leaf node uses embedding semantics or not.
 # False: Not use embedding vector.

@@ -33,7 +33,7 @@ module AmbiResol (
     Prior(..),           -- Prior and its all Constructors
     SIdxPrior,           -- (SIdx, Prior)
     ContextOfSG,         -- (LeftExtend, LeftOver, RightOver, RightExtend, OverType)
-    Context0OfSG,        -- (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType)
+    ContextOfSG0,        -- (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType)
     ClauTag,             -- (SentIdx, ClauIdx)
     ClauTagPrior,        -- (ClauTag, Prior)
     stringToCTPListList,        -- String -> [[ClauTagPrior]]
@@ -58,7 +58,7 @@ module AmbiResol (
     hasSentSampleInSynAmbiResol,    -- SentIdx -> ClauIdx -> ClauIdx -> IO Bool
     removeClauTagPriorFromSynAmbiResol,     -- SentIdx -> ClauIdx -> ClauIdx -> IO ()
     Context2ClauTagPrior,       -- (ContextOfSG, [ClauTagPrior])
-    Context02ClauTagPrior,      -- (Context0OfSG, [ClauTagPrior])
+    Context02ClauTagPrior,      -- (ContextOfSG0, [ClauTagPrior])
     Context2ClauTagPriorBase,   -- [Context2ClauTagPrior]
     Context02ClauTagPriorBase,  -- [Context02ClauTagPrior]
     StruGene,            -- (LeftExtend, LeftOver, RightOver, RightExtend, OverType, Prior)
@@ -86,6 +86,7 @@ module AmbiResol (
     readBiTreePhraSyn0FromStr,    -- String -> BiTree PhraSyn0
     readBiTreePhraSynFromStr,     -- String -> BiTree PhraSyn
     readContextOfSGFromStr,       -- String -> ContextOfSG
+    readContextOfSG0FromStr,      -- String -> ContextOfSG0
     readContextOfSG3a0FromStr,    -- String -> ContextOfSG3a0
     readStruGeneFromStr,          -- String -> StruGene
     readStruGeneListFromStr,      -- String -> [StruGene]
@@ -114,6 +115,7 @@ module AmbiResol (
     getContextFromStruGene2Sample,     -- StruGene2Sample -> ContextOfSG
     fromStruGene2ByHighestFreqPrior,   -- StruGene2 -> StruGene
     readStreamByContext2ClauTagPrior,  -- [Context2ClauTagPrior] -> S.InputStream [MySQLValue] -> IO [Context2ClauTagPrior]
+    readStreamByContext02ClauTagPrior, -- [Context02ClauTagPrior] -> S.InputStream [MySQLValue] -> IO [Context02ClauTagPrior]
     readStreamByContextOfSG3a02ClauTagPrior,  -- [ContextOfSG3a02ClauTagPrior] -> S.InputStream [MySQLValue] -> IO [ContextOfSG3a02ClauTagPrior]
     readStreamByContextOfSG3a2ClauTagPrior,   -- [ContextOfSG3a2ClauTagPrior] -> S.InputStream [MySQLValue] -> IO [ContextOfSG3a2ClauTagPrior]
     readStreamByStruGene2Sample,       -- [StruGene2Sample] -> S.InputStream [MySQLValue] -> IO [StruGene2Sample]
@@ -146,7 +148,6 @@ module AmbiResol (
     StruGene3a0s,        -- (((LeftOverTree0, Seman), (RightOverTree0, Seman)), [ClauTagPrior])
     StruGene3a1Sample,   -- (SIdx, ((LeftOverTree0, Seman), (RightOverTree0, Seman)), [ClauTagPrior])
     ContextOfSG3a0s,     -- ((LeftOverTree0, Seman), (RightOverTree0, Seman))
-
 
     ContextOfSG3a2ClauTagPrior,        -- (ContextOfSG3a, [ClauTagPrior])
     ContextOfSG3a2ClauTagPriorBase,    -- [ContextOfSG3a2ClauTagPrior]
@@ -498,9 +499,9 @@ hasSentIdxInCTPList sentIdx (x:xs)
    There exist corresponding types for PhraSyn0.
   -}
 type ContextOfSG = (LeftExtend, LeftOver, RightOver, RightExtend, OverType)
-type Context0OfSG = (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType)
+type ContextOfSG0 = (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType)
 type Context2ClauTagPrior = (ContextOfSG, [ClauTagPrior])
-type Context02ClauTagPrior = (Context0OfSG, [ClauTagPrior])
+type Context02ClauTagPrior = (ContextOfSG0, [ClauTagPrior])
 type Context2ClauTagPriorBase = [Context2ClauTagPrior]
 type Context02ClauTagPriorBase = [Context02ClauTagPrior]
 
@@ -670,6 +671,20 @@ readContextOfSGFromStr str = (le, lo, ro, re, ot)
     lo = readPhraSynFromStr (snd5 quinTupleStr)
     ro = readPhraSynFromStr (thd5 quinTupleStr)
     re = readPhraSynListFromStr (fth5 quinTupleStr)
+    ot = read (fif5 quinTupleStr) :: Int
+
+{- ContextOfSG0 :: (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType)
+ - LeftExtend0, RightExtend0 :: [PhraSyn0]
+ - LeftOver0, RightOver0 :: PhraSyn
+ -}
+readContextOfSG0FromStr :: String -> ContextOfSG0
+readContextOfSG0FromStr str = (le, lo, ro, re, ot)
+    where
+    quinTupleStr = stringToFiveTuple str
+    le = readPhraSyn0ListFromStr (fst5 quinTupleStr)
+    lo = readPhraSyn0FromStr (snd5 quinTupleStr)
+    ro = readPhraSyn0FromStr (thd5 quinTupleStr)
+    re = readPhraSyn0ListFromStr (fth5 quinTupleStr)
     ot = read (fif5 quinTupleStr) :: Int
 
 {- ContextOfSG3a0 :: (LeftOverTree0, RightOverTree0)
@@ -882,6 +897,23 @@ readStreamByContext2ClauTagPrior es is = do
                                                              fromMySQLInt8 (x!!4)),
                                                              stringToCTPList (fromMySQLText (x!!5)))
                                                           ]) is
+        Nothing -> return es
+
+{- Read a value from input stream [MySQLValue], change it into a Context02ClauTagPrior value, append it
+ - to existed Context02ClauTagPrior list, then read the next until read Nothing.
+ - Here [MySQLValue] is [MySQLText, MySQLText, MySQLText, MySQLText, MySQLInt8, MySQLText],
+ - and Context02ClauTagPrior is ((LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType), ClauTagPrior).
+ -}
+readStreamByContext02ClauTagPrior :: [Context02ClauTagPrior] -> S.InputStream [MySQLValue] -> IO [Context02ClauTagPrior]
+readStreamByContext02ClauTagPrior es is = do
+    S.read is >>= \x -> case x of                            -- Dumb element 'case' is an array with type [MySQLValue]
+        Just x -> readStreamByContext02ClauTagPrior (es ++ [((readPhraSyn0ListFromStr (fromMySQLText (x!!0)),
+                                                              readPhraSyn0FromStr (fromMySQLText (x!!1)),
+                                                              readPhraSyn0FromStr (fromMySQLText (x!!2)),
+                                                              readPhraSyn0ListFromStr (fromMySQLText (x!!3)),
+                                                              fromMySQLInt8 (x!!4)),
+                                                              stringToCTPList (fromMySQLText (x!!5)))
+                                                           ]) is
         Nothing -> return es
 
 {- Read a value from input stream [MySQLValue], change it into a ContextOfSG3a02ClauTagPrior value, append it
