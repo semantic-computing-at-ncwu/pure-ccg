@@ -75,8 +75,8 @@ phrasyn_model:phrasyn0
 #   - stru_gene3a_phrasyn0_202509
 #   - stru_gene3a_phrasyn0_20260129
 #   - stru_gene3a0_clcg_20260927
-#   - stru_gene3a0s_20260817
-syntax_ambig_resol_model:stru_gene3a0_clcg_20260927
+#   - stru_gene3a0s_clcg_20260817
+syntax_ambig_resol_model:stru_gene3a0s_clcg_20260817
 
 # The method finding most similiar sample of StruGene context
 # T0-Q-Q-WANG: Type 0 grammatical attribute identity
@@ -286,12 +286,19 @@ dim_cate:8
 dim_tag:16
 dim_stru:16
 
+# Two MLPs for leaf feature inputs.
+# Dimensions of MLP hide layer and MLP output for word and category, here 'preproj' means preprojection.
+dim_cate_hide_layer:64
+dim_word_hide_layer:64
+dim_word_mlpout:64
+dim_cate_mlpout:64
+
 # Dimensions of projection layers and hidden layers.
 dim_proj:64
 dim_hidden:64
 
 # Learning rate for Neural Network
-lr:0.004
+lr:0.008
 
 # Epochs in training Neural Network
 epochs:1000
@@ -306,7 +313,7 @@ earlyStopPatience:10
 # Number of samples in stru_gene3a0s_20260817 is 13857.
 # Number of samples in stru_gene_phrasyn0_clcg_20260922 is 11262.
 syntax_resol_sample_startId:1
-syntax_resol_sample_endId:11262
+syntax_resol_sample_endId:1000
 
 # Leaf node uses embedding semantics or not.
 # False: Not use embedding vector.

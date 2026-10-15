@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE NamedFieldPuns, RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -25,6 +25,7 @@ import qualified System.IO.Streams as S
 import qualified Data.String as DS
 import Data.Map.Strict (Map)
 import Data.Map.Strict as Map hiding (map, foldl, size, filter, splitAt, foldl')
+import Debug.Trace
 
 import System.Random (randomRIO, mkStdGen, randomR, StdGen, newStdGen)
 import List.Shuffle (shuffle_)
@@ -137,6 +138,14 @@ vecTanh = cmap tanh
 tanhDeriv :: Vector Double -> Vector Double
 tanhDeriv z = cmap (\x -> 1 - tanh x * tanh x) z
 
+-- 线性整流函数（修正线性单元）relu 的导数的向量版
+vecReLU :: Vector Double -> Vector Double
+vecReLU = cmap (\x -> max 0 x)
+
+-- 线性整流函数（修正线性单元）relu 的导数的向量版
+reluDeriv :: Vector Double -> Vector Double
+reluDeriv = cmap (\x -> if x>0 then 1.0 else 0.0)
+
 -- 软性最大值函数（Softmax），带有减去最大值防止 exp 溢出。
 softmax :: Vector Double -> Vector Double
 softmax vec =
@@ -154,7 +163,18 @@ crossEntropy pred label
 
 -- ===================== 网络参数 & 梯度结构 =====================
 data NetParam = NetParam
-  { leafProjW    :: Matrix Double
+  { -- ===== 新增：句法范畴向量MLP（8 → cateHid1Dim → cateMLPOutDim）=====
+    cateMLPW1 :: Matrix Double
+  , cateMLPB1 :: Vector Double
+  , cateMLPW2 :: Matrix Double
+  , cateMLPB2 :: Vector Double
+    -- ===== 新增：词嵌入向量MLP（300 → wordHid1Dim → wordMLPOutDim）=====
+  , wordMLPW1 :: Matrix Double
+  , wordMLPB1 :: Vector Double
+  , wordMLPW2 :: Matrix Double
+  , wordMLPB2 :: Vector Double
+    -- ========== 原有参数不变 ==========
+  , leafProjW    :: Matrix Double
   , leafProjB    :: Vector Double
   , nonLeafProjW :: Matrix Double
   , nonLeafProjB :: Vector Double
@@ -206,7 +226,16 @@ emptyLSTMState d = LSTMState (konst 0.0 d) (konst 0.0 d)
 
 -- 前向计算到一个时间步（节点）时，存储计算结果，后者用于后向梯度计算。
 data NodeCache = NodeCache
-  { ncFeat      :: NodeFeat          -- 节点的特征向量, {cateVec; wordVec} 或 {cateVec; tagVec; struVec}
+  { ncCateVec :: Vector Double       -- 新增MLP缓存，仅叶子节点有效
+  , ncCateH1Pre :: Vector Double
+  , ncCateH1 :: Vector Double
+  , ncCateMLPOut :: Vector Double
+  , ncWordVec :: Vector Double
+  , ncWordH1Pre :: Vector Double
+  , ncWordH1 :: Vector Double
+  , ncWordMLPOut :: Vector Double
+    -- 下面是原有的
+  , ncFeat      :: NodeFeat          -- 节点的特征向量, {cateMLPOut; wordMLPOut} 或 {cateVec; tagVec; struVec}
   , ncProjFeat  :: Vector Double     -- 投影层输出向量, 维度是 projDim
   , ncInpGatePre :: Vector Double    -- 输入门激活前的值 z 的向量
   , ncForgetLPre :: Vector Double    -- 左遗忘门激活前的值 z 的向量
@@ -227,35 +256,6 @@ data NodeCache = NodeCache
   , ncIsLeaf    :: Bool              -- 当前节点是否叶子的显性标记
   } deriving (Show)
 
--- 空的节点缓存，根据是否叶子，有一些区别。
-emptyNodeCache :: Bool -> Int -> Int -> Int -> NodeCache
-emptyNodeCache isLeaf featDim projDim hidDim =
-  let
-      featZero = konst 0.0 featDim
-      hidZero = konst 0.0 hidDim
-      projZero = konst 0.0 projDim
-  in NodeCache
-   { ncFeat = featZero
-   , ncProjFeat = projZero
-   , ncInpGatePre = hidZero
-   , ncForgetLPre = hidZero
-   , ncForgetRPre = hidZero
-   , ncOutGatePre = hidZero
-   , ncCellCandPre = hidZero
-   , ncInpGate = hidZero
-   , ncForgetLG = hidZero
-   , ncForgetRG = hidZero
-   , ncOutGate = hidZero
-   , ncCellCand = hidZero
-   , ncNewC = hidZero
-   , ncNewH = hidZero
-   , ncLeftH = hidZero
-   , ncLeftC = hidZero
-   , ncRightH = hidZero
-   , ncRightC = hidZero
-   , ncIsLeaf = isLeaf
-   }
-
 getRootCache :: SyntaxTree NodeCache -> NodeCache
 getRootCache (STreeNode c _ _ _) = c
 getRootCache EmptySTree = error "getRootCache: empty tree has no cache"
@@ -266,14 +266,16 @@ data TreeFwdResult = TreeFwdResult
   , tfCacheTree :: SyntaxTree NodeCache
   } deriving (Show)
 
--- 根据是否叶子，把输入的原始特征投影到给定维度的空间
+{- 根据是否叶子，把输入的原始特征投影到给定维度的空间，这是一个线性的仿射变换。
+ - 输入的原始特征，其实是 MLP 的输出向量。
+ - 对于叶子，MLP 输出 {cateMLPOut;wordMLPOut}；对于非叶子，MLP 输出 {cateVec;tagVec;struVec}。
+ -}
 projectRawFeat :: NetParam -> Bool -> Vector Double -> Vector Double
 projectRawFeat NetParam{..} isLeaf rawFeat =
   let
     expectedRawDim = if isLeaf
       then snd $ LA.size leafProjW
       else snd $ LA.size nonLeafProjW
-
     actualDim = size rawFeat
   in
     if actualDim /= expectedRawDim
@@ -308,62 +310,90 @@ randMat rows cols gen
       in (mat, g')
 
 -- 初始化网络参数
-initNetParam :: Int -> Int -> Int -> Int -> IO NetParam
-initNetParam leafRawDim nonLeafRawDim projDim hidDim = do
+initNetParam :: Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> IO NetParam
+initNetParam cateRawDim wordRawDim cateHid1 wordHid1 cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim = do
   let
     g0 = mkStdGen 42                      -- 生成随机函数的种子
-    (lProjW, g1) = randMat projDim leafRawDim g0
-    (lProjB, g2) = randVec projDim g1
-    (nlProjW, g3) = randMat projDim nonLeafRawDim g2
-    (nlProjB, g4) = randVec projDim g3
+    -- ========== 新增：初始化cate MLP 8 → cateHid1Dim → cateMLPOutDim ==========
+    (cateW1, g1) = randMat cateHid1 cateRawDim g0
+    (cateB1, g2) = randVec cateHid1 g1
+    (cateW2, g3) = randMat cateMLPOutDim cateHid1 g2
+    (cateB2, g4) = randVec cateMLPOutDim g3
+    -- ========== 新增：初始化word MLP 300 → wordHid1Dim → wordMLPOutDim ==========
+    (wordW1, g5) = randMat wordHid1 wordRawDim g4
+    (wordB1, g6) = randVec wordHid1 g5
+    (wordW2, g7) = randMat wordMLPOutDim wordHid1 g6
+    (wordB2, g8) = randVec wordMLPOutDim g7
+    -- ========== 原有参数初始化，g从g8继续 ==========
+    leafMLPDim = cateMLPOutDim + wordMLPOutDim          -- 仿射投影前，叶子特征向量（MLP投影后的向量的拼接）的维度
+    (lProjW, g9) = randMat projDim leafMLPDim g8
+    (lProjB, g10) = randVec projDim g9
+    (nlProjW, g11) = randMat projDim nonLeafRawDim g10
+    (nlProjB, g12) = randVec projDim g11
 
-    (iW, g5) = randMat hidDim projDim g4      -- 输入门权重矩阵，用于右乘投影层输出向量
-    (iLW, g6) = randMat hidDim hidDim g5      -- 输入门左隐矩阵，用于右乘左孩子隐状态向量
-    (iRW, g7) = randMat hidDim hidDim g6      -- 输入门右隐矩阵，用于右乘右孩子隐状态向量
-    (iB, g8) = randVec hidDim g7              -- 输入门偏置向量
+    (iW, g13) = randMat hidDim projDim g12      -- 输入门权重矩阵，用于右乘投影层输出向量
+    (iLW, g14) = randMat hidDim hidDim g13      -- 输入门左隐矩阵，用于右乘左孩子隐状态向量
+    (iRW, g15) = randMat hidDim hidDim g14      -- 输入门右隐矩阵，用于右乘右孩子隐状态向量
+    (iB, g16) = randVec hidDim g15              -- 输入门偏置向量
 
-    (fLW, g9) = randMat hidDim projDim g8      -- 遗忘门权重矩阵，用于右乘投影层输出向量
-    (fLLW, g10) = randMat hidDim hidDim g9     -- 遗忘门左隐矩阵，用于右乘左孩子隐状态向量
-    (fLRW, g11) = randMat hidDim hidDim g10    -- 遗忘门右隐矩阵，用于右乘右孩子隐状态向量
-    (fLB, g12) = randVec hidDim g11            -- 遗忘门偏置向量
+    (fLW, g17) = randMat hidDim projDim g16     -- 遗忘门权重矩阵，用于右乘投影层输出向量
+    (fLLW, g18) = randMat hidDim hidDim g17     -- 遗忘门左隐矩阵，用于右乘左孩子隐状态向量
+    (fLRW, g19) = randMat hidDim hidDim g18     -- 遗忘门右隐矩阵，用于右乘右孩子隐状态向量
+    (fLB, g20) = randVec hidDim g19             -- 遗忘门偏置向量
 
-    (fRW, g13) = randMat hidDim projDim g12    -- 遗忘门权重矩阵，用于右乘投影层输出向量
-    (fRLW, g14) = randMat hidDim hidDim g13    -- 遗忘门左隐矩阵，用于右乘左孩子隐状态向量
-    (fRRW, g15) = randMat hidDim hidDim g14    -- 遗忘门右隐矩阵，用于右乘右孩子隐状态向量
-    (fRB, g16) = randVec hidDim g15            -- 遗忘门偏置向量
+    (fRW, g21) = randMat hidDim projDim g20     -- 遗忘门权重矩阵，用于右乘投影层输出向量
+    (fRLW, g22) = randMat hidDim hidDim g21     -- 遗忘门左隐矩阵，用于右乘左孩子隐状态向量
+    (fRRW, g23) = randMat hidDim hidDim g22     -- 遗忘门右隐矩阵，用于右乘右孩子隐状态向量
+    (fRB, g24) = randVec hidDim g23             -- 遗忘门偏置向量
 
-    (oW, g17) = randMat hidDim projDim g16    -- 输出门权重矩阵，用于右乘投影层输出向量
-    (oLW, g18) = randMat hidDim hidDim g17    -- 输出门左隐矩阵，用于右乘左孩子隐状态向量
-    (oRW, g19) = randMat hidDim hidDim g18    -- 输出门右隐矩阵，用于右乘右孩子隐状态向量
-    (oB, g20) = randVec hidDim g19            -- 输出门偏置向量
+    (oW, g25) = randMat hidDim projDim g24      -- 输出门权重矩阵，用于右乘投影层输出向量
+    (oLW, g26) = randMat hidDim hidDim g25      -- 输出门左隐矩阵，用于右乘左孩子隐状态向量
+    (oRW, g27) = randMat hidDim hidDim g26      -- 输出门右隐矩阵，用于右乘右孩子隐状态向量
+    (oB, g28) = randVec hidDim g27              -- 输出门偏置向量
 
-    (cW, g21) = randMat hidDim projDim g20    -- 候选细胞状态权重矩阵，用于右乘投影层输出向量
-    (cLW, g22) = randMat hidDim hidDim g21    -- 候选细胞状态左隐矩阵，用于右乘左孩子隐状态向量
-    (cRW, g23) = randMat hidDim hidDim g22    -- 候选细胞状态右隐矩阵，用于右乘右孩子隐状态向量
-    (cB, g24) = randVec hidDim g23            -- 候选细胞状态偏置向量
+    (cW, g29) = randMat hidDim projDim g28      -- 候选细胞状态权重矩阵，用于右乘投影层输出向量
+    (cLW, g30) = randMat hidDim hidDim g29      -- 候选细胞状态左隐矩阵，用于右乘左孩子隐状态向量
+    (cRW, g31) = randMat hidDim hidDim g30      -- 候选细胞状态右隐矩阵，用于右乘右孩子隐状态向量
+    (cB, g32) = randVec hidDim g31              -- 候选细胞状态偏置向量
 
-    (clsW, g25) = randMat 3 (2 * hidDim) g24  -- 两棵树的根节点的隐状态拼接到三分类的投影矩阵
-    (clsB, _) = randVec 3 g25                 -- 三分类投影的偏置向量
+    (clsW, g33) = randMat 3 (2 * hidDim) g32    -- 两棵树的根节点的隐状态拼接到三分类的投影矩阵
+    (clsB, _) = randVec 3 g33                   -- 三分类投影的偏置向量
 
   return NetParam
-    { leafProjW = lProjW, leafProjB = lProjB
-    , nonLeafProjW = nlProjW, nonLeafProjB = nlProjB
-    , inpW = iW, inpLW = iLW, inpRW = iRW, inpB = iB
-    , forgetLW = fLW, forgetLLW = fLLW, forgetLRW = fLRW, forgetLB = fLB
-    , forgetRW = fRW, forgetRLW = fRLW, forgetRRW = fRRW, forgetRB = fRB
-    , outW = oW, outLW = oLW, outRW = oRW, outB = oB
-    , cellCandW = cW, cellCandLW = cLW, cellCandRW = cRW, cellCandB = cB
-    , clsWeight = clsW, clsBias = clsB
+    { cateMLPW1 = cateW1, cateMLPB1 = cateB1    -- 1st hidden layer for category embedding vector
+    , cateMLPW2 = cateW2, cateMLPB2 = cateB2    -- 2nd hidden layer for category embedding vector
+    , wordMLPW1 = wordW1, wordMLPB1 = wordB1    -- 1st hidden layer for word embedding vector
+    , wordMLPW2 = wordW2, wordMLPB2 = wordB2    -- 2nd hidden layer for word embedding vector
+    , leafProjW = lProjW, leafProjB = lProjB    -- Project layer for leaf node
+    , nonLeafProjW = nlProjW, nonLeafProjB = nlProjB      -- Project layer for non-leaf node
+    , inpW = iW, inpLW = iLW, inpRW = iRW, inpB = iB      -- Input gate
+    , forgetLW = fLW, forgetLLW = fLLW, forgetLRW = fLRW, forgetLB = fLB      -- Left forget gate
+    , forgetRW = fRW, forgetRLW = fRLW, forgetRRW = fRRW, forgetRB = fRB      -- Right forget gate
+    , outW = oW, outLW = oLW, outRW = oRW, outB = oB                          -- Output gate
+    , cellCandW = cW, cellCandLW = cLW, cellCandRW = cRW, cellCandB = cB      -- Cell state
+    , clsWeight = clsW, clsBias = clsB                                        -- Classification layer
     }
 
 -- 清零网络参数的梯度，即损失 Loss 对每个参数的偏导数都是 0.0
-zeroGrad :: Int -> Int -> Int -> Int -> NetGrad
-zeroGrad leafRawDim nonLeafRawDim projDim hidDim =
+zeroGrad :: Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> Int -> NetGrad
+zeroGrad cateInDim wordInDim cateHid1Dim wordHid1Dim cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim =
   let zm r c = konst 0.0 (r, c)
       zv d = konst 0.0 d
   in NetParam
-    { leafProjW = zm projDim leafRawDim, leafProjB = zv projDim
+    { -- category MLP grad zero
+      cateMLPW1 = zm cateHid1Dim cateInDim
+    , cateMLPB1 = zv cateHid1Dim
+    , cateMLPW2 = zm cateMLPOutDim cateHid1Dim
+    , cateMLPB2 = zv cateMLPOutDim
+      -- word MLP grad zero
+    , wordMLPW1 = zm wordHid1Dim wordInDim
+    , wordMLPB1 = zv wordHid1Dim
+    , wordMLPW2 = zm wordMLPOutDim wordHid1Dim
+    , wordMLPB2 = zv wordMLPOutDim
+      -- Project layer grad zero
+    , leafProjW = zm projDim (cateMLPOutDim + wordMLPOutDim), leafProjB = zv projDim
     , nonLeafProjW = zm projDim nonLeafRawDim, nonLeafProjB = zv projDim
+      -- LSTM basic unit grad zero
     , inpW  = zm hidDim projDim, inpLW = zm hidDim hidDim, inpRW = zm hidDim hidDim, inpB = zv hidDim
     , forgetLW = zm hidDim projDim, forgetLLW = zm hidDim hidDim, forgetLRW = zm hidDim hidDim, forgetLB = zv hidDim
     , forgetRW = zm hidDim projDim, forgetRLW = zm hidDim hidDim, forgetRRW = zm hidDim hidDim, forgetRB = zv hidDim
@@ -376,11 +406,19 @@ zeroGrad leafRawDim nonLeafRawDim projDim hidDim =
 -- 网络参数的梯度加
 gradAdd :: NetGrad -> NetGrad -> NetGrad
 gradAdd g1 g2 = NetParam
-    { leafProjW = leafProjW g1 + leafProjW g2
+    { cateMLPW1 = cateMLPW1 g1 + cateMLPW1 g2         -- MLP gradient addition
+    , cateMLPB1 = cateMLPB1 g1 + cateMLPB1 g2
+    , cateMLPW2 = cateMLPW2 g1 + cateMLPW2 g2
+    , cateMLPB2 = cateMLPB2 g1 + cateMLPB2 g2
+    , wordMLPW1 = wordMLPW1 g1 + wordMLPW1 g2
+    , wordMLPB1 = wordMLPB1 g1 + wordMLPB1 g2
+    , wordMLPW2 = wordMLPW2 g1 + wordMLPW2 g2
+    , wordMLPB2 = wordMLPB2 g1 + wordMLPB2 g2
+    , leafProjW = leafProjW g1 + leafProjW g2         -- Projection gradient addition
     , leafProjB = leafProjB g1 + leafProjB g2
     , nonLeafProjW = nonLeafProjW g1 + nonLeafProjW g2
     , nonLeafProjB = nonLeafProjB g1 + nonLeafProjB g2
-    , inpW = inpW g1 + inpW g2
+    , inpW = inpW g1 + inpW g2                        -- LSTM basic unit gradient addition
     , inpLW = inpLW g1 + inpLW g2
     , inpRW = inpRW g1 + inpRW g2
     , inpB = inpB g1 + inpB g2
@@ -408,7 +446,15 @@ gradAdd g1 g2 = NetParam
 gradScale :: Double -> NetGrad -> NetGrad
 gradScale s g1 =
    NetParam
-    { leafProjW = scale s (leafProjW g1)
+    { cateMLPW1 = scale s (cateMLPW1 g1)
+    , cateMLPB1 = scale s (cateMLPB1 g1)
+    , cateMLPW2 = scale s (cateMLPW2 g1)
+    , cateMLPB2 = scale s (cateMLPB2 g1)
+    , wordMLPW1 = scale s (wordMLPW1 g1)
+    , wordMLPB1 = scale s (wordMLPB1 g1)
+    , wordMLPW2 = scale s (wordMLPW2 g1)
+    , wordMLPB2 = scale s (wordMLPB2 g1)
+    , leafProjW = scale s (leafProjW g1)
     , leafProjB = scale s (leafProjB g1)
     , nonLeafProjW = scale s (nonLeafProjW g1)
     , nonLeafProjB = scale s (nonLeafProjB g1)
@@ -441,7 +487,11 @@ clipGrad :: Double -> NetGrad -> NetGrad
 clipGrad maxNorm g =
   let vecNorm v = sqrt $ sumElements (v * v)     -- 欧几里得范数 L2，若元素是某一维度的值间距离，L2 就是欧式距离。
       matNorm m = sqrt $ sumElements (m * m)     -- 求矩阵的 L2
-      collectNorms = [ matNorm (leafProjW g), vecNorm (leafProjB g)
+      collectNorms = [ matNorm (cateMLPW1 g), vecNorm (cateMLPB1 g)
+                     , matNorm (cateMLPW2 g), vecNorm (cateMLPB2 g)
+                     , matNorm (wordMLPW1 g), vecNorm (wordMLPB1 g)
+                     , matNorm (wordMLPW2 g), vecNorm (wordMLPB2 g)
+                     , matNorm (leafProjW g), vecNorm (leafProjB g)
                      , matNorm (nonLeafProjW g), vecNorm (nonLeafProjB g)
                      , matNorm (inpW g), matNorm (inpLW g), matNorm (inpRW g), vecNorm (inpB g)
                      , matNorm (forgetLW g), matNorm (forgetLLW g), matNorm (forgetLRW g), vecNorm (forgetLB g)
@@ -461,11 +511,19 @@ updateParam lr grad p =
     updateMat m gm = m + scale (-lr) gm          -- 更新矩阵的方法。若梯度为正，就减小参数；反之，就增大参数。
     updateVec v gv = v + scale (-lr) gv          -- 更新向量
   in p
-    { leafProjW    = updateMat (leafProjW p) (leafProjW grad)
+    { cateMLPW1 = updateMat (cateMLPW1 p) (cateMLPW1 grad)            -- Update gradient of MLP
+    , cateMLPB1 = updateVec (cateMLPB1 p) (cateMLPB1 grad)
+    , cateMLPW2 = updateMat (cateMLPW2 p) (cateMLPW2 grad)
+    , cateMLPB2 = updateVec (cateMLPB2 p) (cateMLPB2 grad)
+    , wordMLPW1 = updateMat (wordMLPW1 p) (wordMLPW1 grad)
+    , wordMLPB1 = updateVec (wordMLPB1 p) (wordMLPB1 grad)
+    , wordMLPW2 = updateMat (wordMLPW2 p) (wordMLPW2 grad)
+    , wordMLPB2 = updateVec (wordMLPB2 p) (wordMLPB2 grad)
+    , leafProjW    = updateMat (leafProjW p) (leafProjW grad)         -- Update gradient of projection layer
     , leafProjB    = updateVec (leafProjB p) (leafProjB grad)
     , nonLeafProjW = updateMat (nonLeafProjW p) (nonLeafProjW grad)
     , nonLeafProjB = updateVec (nonLeafProjB p) (nonLeafProjB grad)
-    , inpW  = updateMat (inpW p) (inpW grad)
+    , inpW  = updateMat (inpW p) (inpW grad)                          -- Update gradient of LSTM basic unit
     , inpLW  = updateMat (inpLW p) (inpLW grad)
     , inpRW  = updateMat (inpRW p) (inpRW grad)
     , inpB  = updateVec (inpB p) (inpB grad)
@@ -489,25 +547,101 @@ updateParam lr grad p =
     , clsBias   = updateVec (clsBias p) (clsBias grad)
     }
 
--- ===================== 【修复】标准 Child-Sum Tree-LSTM 前向传播 =====================
+-- Cate MLP前向：cateVec(8) -> HideLayer(dim_cate_hide_layer) -> cateVec'(dim_cate_mlpout), using activation function sigmoid.
+mlpCateForward :: NetParam -> Vector Double -> (Vector Double, Vector Double, Vector Double)
+mlpCateForward NetParam{cateMLPW1, cateMLPB1, cateMLPW2, cateMLPB2} x =
+  let h1Pre = cateMLPW1 #> x + cateMLPB1
+      h1 = vecSigmoid h1Pre
+      out = cateMLPW2 #> h1 + cateMLPB2
+  in (out, h1, h1Pre)                      -- 返回输出、第一层激活、第一层预激活
+
+-- Word MLP前向：wordVec(300) -> HideLayer(dim_word_hide_layer) -> wordVec'(dim_word_mlpout)，using activation function sigmoid.
+mlpWordForward :: NetParam -> Vector Double -> (Vector Double, Vector Double, Vector Double)
+mlpWordForward NetParam{wordMLPW1, wordMLPB1, wordMLPW2, wordMLPB2} x =
+  let h1Pre = wordMLPW1 #> x + wordMLPB1
+      h1 = vecSigmoid h1Pre
+      out = wordMLPW2 #> h1 + wordMLPB2
+  in (out, h1, h1Pre)                      -- 返回输出、第一层激活、第一层预激活
+
+{- MLP 反向函数
+ - 签名：mlpCateBackward param grad dLdOut out h1 h1Pre x -> (updatedGrad, dLdX)
+ -}
+mlpCateBackward :: NetParam -> NetGrad -> Vector Double -> Vector Double -> Vector Double -> Vector Double -> Vector Double -> (NetGrad, Vector Double)
+mlpCateBackward NetParam{cateMLPW1,cateMLPB1,cateMLPW2,cateMLPB2} netGrad dLdOut out h1 h1Pre x =
+   let
+     dLdH1 = tr' cateMLPW2 #> dLdOut
+     dLdH1Pre = dLdH1 * sigmoidDeriv h1Pre
+     dLdX = tr' cateMLPW1 #> dLdH1Pre
+     gradW2 = outer dLdOut h1
+     gradB2 = dLdOut
+     gradW1 = outer dLdH1Pre x
+     gradB1 = dLdH1Pre
+     -- 只修改传入grad网络的cate部分，其余保留
+     mlpGrad = netGrad
+       { cateMLPW1 = gradW1
+       , cateMLPB1 = gradB1
+       , cateMLPW2 = gradW2
+       , cateMLPB2 = gradB2
+       }
+   in (mlpGrad, dLdX)
+
+mlpWordBackward :: NetParam -> NetGrad -> Vector Double -> Vector Double -> Vector Double -> Vector Double -> Vector Double -> (NetGrad, Vector Double)
+mlpWordBackward NetParam{wordMLPW1,wordMLPB1,wordMLPW2,wordMLPB2} netGrad dLdOut out h1 h1Pre x =
+   let
+     dLdH1 = tr' wordMLPW2 #> dLdOut
+     dLdH1Pre = dLdH1 * sigmoidDeriv h1Pre
+     dLdX = tr' wordMLPW1 #> dLdH1Pre
+     gradW2 = outer dLdOut h1
+     gradB2 = dLdOut
+     gradW1 = outer dLdH1Pre x
+     gradB1 = dLdH1Pre
+     mlpGrad = netGrad
+       { wordMLPW1 = gradW1
+       , wordMLPB1 = gradB1
+       , wordMLPW2 = gradW2
+       , wordMLPB2 = gradB2
+       }
+   in (mlpGrad, dLdX)
+
+{- ===================== Binary Tree-LSTM 前向传播 =====================
+ - Computing output of current node. Input 'feat' is xw or xp, here xw = {cateVec;embVec}, and xp = {cateVec;tagVec;struVec}.
+ -}
 treeForwardCached :: NetParam -> RawSyntaxTree -> TreeFwdResult
 treeForwardCached param EmptySTree =         -- 空节点不参与参数更新，缓存仅占位
   let
     hidDim = netHidDim param
   in TreeFwdResult (emptyLSTMState hidDim) EmptySTree
-
 treeForwardCached param st@STreeNode{nodeData = feat, stLeft = l, stRight = r, stIsLeaf = isLeafFlag} =
   let
-    leftRes = treeForwardCached param l
-    rightRes = treeForwardCached param r
-    LSTMState hl cl = tfRootState leftRes
+    leftRes = treeForwardCached param l                -- Firstly, recursively forward computing on left subtree,
+    rightRes = treeForwardCached param r               -- and right subtree.
+    LSTMState hl cl = tfRootState leftRes              -- Secondly, extract hidden layer vector and status vector.
     LSTMState hr cr = tfRootState rightRes
     NetParam{..} = param
-
     hidDim = netHidDim param
-    projFeat = projectRawFeat param isLeafFlag feat
 
-    -- ========== 修复：输入门/输出门/cell候选 并入左右子树隐状态 ==========
+    -- ========== 新增叶子MLP分支 ==========
+    (cateVec, wordVec, cateMLPOut, cateH1, cateH1Pre, wordMLPOut, wordH1, wordH1Pre, rawFeatAfterMLP)
+      | isLeafFlag =
+          let
+            cateRaw = subVector 0 8 feat          -- 前8维 cateVec
+            wordRaw = subVector 8 300 feat        -- 后300维 wordVec
+            (cateOut, cateH1, cateH1Pre) = mlpCateForward param cateRaw
+            (wordOut, wordH1, wordH1Pre) = mlpWordForward param wordRaw
+            combinedMLPFeat = LA.vjoin [cateOut, wordOut]
+          in (cateRaw, wordRaw, cateOut, cateH1, cateH1Pre, wordOut, wordH1, wordH1Pre, combinedMLPFeat)
+      | otherwise =
+          -- 非叶子节点：保留原有feat，MLP缓存填零向量
+          let zero8 = konst 0 8
+              zero300 = konst 0 300
+              zeroCateH = konst 0 (LA.size cateMLPB1)
+              zeroWordH = konst 0 (LA.size wordMLPB1)
+              zeroCateOut = konst 0 (LA.size cateMLPB2)
+              zeroWordOut = konst 0 (LA.size wordMLPB2)
+            in (zero8, zero300, zeroCateOut, zeroCateH, zeroCateH, zeroWordOut, zeroWordH, zeroWordH, feat)
+
+    projFeat = projectRawFeat param isLeafFlag rawFeatAfterMLP
+    -- ========== 输入门/输出门/cell候选 并入左右子树隐状态 ==========
     inpGatePre     = inpW #> projFeat + inpLW #> hl + inpRW #> hr + inpB
     forgetLPre     = forgetLW #> projFeat + forgetLLW #> hl + forgetLRW #> hr + forgetLB
     forgetRPre     = forgetRW #> projFeat + forgetRLW #> hl + forgetRRW #> hr + forgetRB
@@ -524,7 +658,15 @@ treeForwardCached param st@STreeNode{nodeData = feat, stLeft = l, stRight = r, s
     newH = outGate * vecTanh newC
 
     cache = NodeCache
-      { ncFeat = feat
+      { ncCateVec = cateVec
+      , ncCateH1Pre = cateH1Pre
+      , ncCateH1 = cateH1
+      , ncCateMLPOut = cateMLPOut
+      , ncWordVec = wordVec
+      , ncWordH1Pre = wordH1Pre
+      , ncWordH1 = wordH1
+      , ncWordMLPOut = wordMLPOut
+      , ncFeat = rawFeatAfterMLP
       , ncProjFeat = projFeat
       , ncInpGatePre = inpGatePre
       , ncForgetLPre = forgetLPre
@@ -547,18 +689,18 @@ backwardNode :: NetParam                       -- 当前的网络参数，其实
              -> Vector Double                  -- Loss 对本节点细胞状态的偏导数
              -> (NetGrad, Vector Double, Vector Double, Vector Double, Vector Double, Vector Double)
                       --  dLdhL          dLdcL          dLdhR          dLdcR          dLdRawFeat
-backwardNode NetParam{..} nc@NodeCache{..} dLdh dLdc =
+backwardNode param@NetParam{..} nc@NodeCache{..} dLdh dLdc =
   let
     tanhNewC = vecTanh ncNewC                  -- 对细胞状态 c 计算双曲函数 tanh
     dTanhC = tanhDeriv ncNewC                  -- 对细胞状态 c 计算双曲函数的导数 tanh'
     dhdnewC = ncOutGate * dTanhC               -- h = o * tanh(c), dhdnewC = o * tanh'(newC)
     dLdnewC = dLdh * dhdnewC + dLdc            -- 父节点传下来的 dLdc, 必须加上。
 
-    dLdOutGate = dLdh * tanhNewC                          -- dLdo = dLdh * dhdo = dLdh * tanh(c)
-    dLdRawOut = dLdOutGate * sigmoidDeriv ncOutGatePre    -- dLdrawO = dLdo * dodrawO = dLdo * sigmoidDeriv ncOutGatePre
+    dLdOutGate = dLdh * tanhNewC                            -- dLdo = dLdh * dhdo = dLdh * tanh(c)
+    dLdRawOut = dLdOutGate * sigmoidDeriv ncOutGatePre      -- dLdrawO = dLdo * dodrawO = dLdo * sigmoidDeriv ncOutGatePre
 
-    dLdInpGate = dLdnewC * ncCellCand                     -- dLdi = dLdc * dcdi = dLdc * ncCellCand
-    dLdRawInp = dLdInpGate * sigmoidDeriv ncInpGatePre    --  dLdrawI = dLdi * didrawI = dLdi * sigmoidDeriv ncInpGatePre
+    dLdInpGate = dLdnewC * ncCellCand                       -- dLdi = dLdc * dcdi = dLdc * ncCellCand
+    dLdRawInp = dLdInpGate * sigmoidDeriv ncInpGatePre      --  dLdrawI = dLdi * didrawI = dLdi * sigmoidDeriv ncInpGatePre
 
     dLdForgetL = dLdnewC * ncLeftC                          -- dLdfl = dLdc * dcdfl = dLdc * ncLeftC
     dLdRawForgetL = dLdForgetL * sigmoidDeriv ncForgetLPre  -- dLdrawFl = dLdfl * sigmoidDeriv ncForgetLPre
@@ -591,26 +733,6 @@ backwardNode NetParam{..} nc@NodeCache{..} dLdh dLdc =
 
     dLdcR = dLdnewC * ncForgetRG                            -- dLdcR = dLdnewC * dnewCdcR = dLdnewC * ncForgetRG
 
-    hidDim = LA.size ncInpGate
-    projDim = LA.size dLdProjFeat
-    leafRawDim = snd $ LA.size leafProjW
-    nonLeafRawDim = snd $ LA.size nonLeafProjW
-    zeroG = zeroGrad leafRawDim nonLeafRawDim projDim hidDim
-
-    (projGrad, dLdRawFeat)
-      | ncIsLeaf =
-          let gW = outer dLdProjFeat ncFeat
-              gB = dLdProjFeat
-              dX = tr' leafProjW #> dLdProjFeat
-              pg = zeroG { leafProjW = gW, leafProjB = gB }
-          in (pg, dX)
-      | otherwise =
-          let gW = outer dLdProjFeat ncFeat
-              gB = dLdProjFeat
-              dX = tr' nonLeafProjW #> dLdProjFeat
-              pg = zeroG { nonLeafProjW = gW, nonLeafProjB = gB }
-          in (pg, dX)
-
     gradInpW = outer dLdRawInp ncProjFeat
     gradInpLW = outer dLdRawInp ncLeftH
     gradInpRW = outer dLdRawInp ncRightH
@@ -636,13 +758,50 @@ backwardNode NetParam{..} nc@NodeCache{..} dLdh dLdc =
     gradCellCandRW = outer dLdRawCell ncRightH
     gradCellCandB = dLdRawCell
 
+    dLdMLPOutFeat = case ncIsLeaf of
+                      True -> tr' leafProjW #> dLdProjFeat      -- dL/d [cateMLPout; wordMLPout]
+                      False -> tr' nonLeafProjW #> dLdProjFeat  -- dL/d [cateVec; tagVec; struVec]
+
+    cateHid1Dim = LA.size cateMLPB1
+    wordHid1Dim = LA.size wordMLPB1
+    cateMLPOutDim = LA.size cateMLPB2
+    wordMLPOutDim = LA.size wordMLPB2
+    nonLeafRawDim = snd $ LA.size nonLeafProjW
+    projDim = LA.size leafProjB
+    hidDim = LA.size inpB
+    zeroG = zeroGrad 8 300 cateHid1Dim wordHid1Dim cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim      -- Zero gradient network.
+
+    (projGrad, dLdRawFeat)
+      | ncIsLeaf =
+          let
+              -- dLdMLPOutFeat: dL/d [cateMLPout; wordMLPout]
+              debugMsg = "cateMLPOutDim = " ++ show cateMLPOutDim ++ ", wordMLPOutDim = " ++ show wordMLPOutDim ++ ", dLdMLPOutFeat = " ++ show (LA.size dLdMLPOutFeat)
+              dLdCateMLPOut = traceIO debugMsg `seq` subVector 0 cateMLPOutDim dLdMLPOutFeat
+              dLdWordMLPOut = subVector cateMLPOutDim wordMLPOutDim dLdMLPOutFeat
+              -- 取出缓存在NodeCache里的MLP中间值
+              (cateMLPGrad, dLdCateIn) = mlpCateBackward param zeroG dLdCateMLPOut ncCateMLPOut ncCateH1 ncCateH1Pre ncCateVec
+              (wordMLPGrad, dLdWordIn) = mlpWordBackward param zeroG dLdWordMLPOut ncWordMLPOut ncWordH1 ncWordH1Pre ncWordVec
+              dLdRawFeatSplit = vjoin [dLdCateIn, dLdWordIn]
+
+              gW = outer dLdProjFeat ncFeat            -- rawFeatAfterMLP = {ncCateMLPOut; ncWordMLPOut}
+              gB = dLdProjFeat
+              pg = zeroG { leafProjW = gW, leafProjB = gB }                     -- Projection layer gradient
+              fullLeafGrad = pg `gradAdd` cateMLPGrad `gradAdd` wordMLPGrad
+          in (fullLeafGrad, dLdRawFeatSplit)
+      | otherwise =
+          let gW = outer dLdProjFeat ncFeat            -- rawFeatAfterMLP = {cateVec; tagVec; struVec}
+              gB = dLdProjFeat
+              dX = tr' nonLeafProjW #> dLdProjFeat
+              pg = zeroG { nonLeafProjW = gW, nonLeafProjB = gB }
+          in (pg, dX)
+
     lstmGrad = zeroG
       { inpW = gradInpW, inpLW = gradInpLW, inpRW = gradInpRW, inpB = gradInpB
       , forgetLW = gradForgetLW, forgetLLW = gradForgetLLW, forgetLRW = gradForgetLRW, forgetLB = gradForgetLB
       , forgetRW = gradForgetRW, forgetRLW = gradForgetRLW, forgetRRW = gradForgetRRW, forgetRB = gradForgetRB
       , outW = gradOutW, outLW = gradOutLW, outRW = gradOutRW, outB = gradOutB
       , cellCandW = gradCellCandW, cellCandLW = gradCellCandLW, cellCandRW = gradCellCandRW, cellCandB = gradCellCandB
-    }
+      }
 
     fullGrad = projGrad `gradAdd` lstmGrad
   in (fullGrad, dLdhL, dLdcL, dLdhR, dLdcR, dLdRawFeat)
@@ -652,11 +811,14 @@ backwardNode NetParam{..} nc@NodeCache{..} dLdh dLdc =
 backwardTree :: NetParam -> SyntaxTree NodeCache -> Vector Double -> Vector Double -> NetGrad
 backwardTree param EmptySTree _ _ =
   let
-    leafRawDim = snd $ LA.size (leafProjW param)
+    cateHid1Dim = fst $ LA.size (cateMLPW1 param)
+    wordHid1Dim = fst $ LA.size (wordMLPW1 param)
+    cateMLPOutDim = fst $ LA.size (cateMLPW2 param)
+    wordMLPOutDim = fst $ LA.size (wordMLPW2 param)
     nonLeafRawDim = snd $ LA.size (nonLeafProjW param)
     projDim = fst $ LA.size (leafProjW param)
     hidDim = fst $ LA.size (inpW param)
-  in zeroGrad leafRawDim nonLeafRawDim projDim hidDim
+  in zeroGrad 8 300 cateHid1Dim wordHid1Dim cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim
 backwardTree param (STreeNode cache leftTree rightTree _) dLdh dLdc =
   let
     (nodeGrad, dLdhL, dLdcL, dLdhR, dLdcR, _) = backwardNode param cache dLdh dLdc
@@ -699,11 +861,14 @@ sampleForwardLossGrad param ((ltree, rtree), action) =
 batchTrainStep :: NetParam -> [TrainSample] -> Double -> (Double, NetParam)
 batchTrainStep param samples lr =
   let
-    leafD = snd $ LA.size $ leafProjW param
-    nonLeafD = snd $ LA.size $ nonLeafProjW param
-    projD = netProjDim param
-    hidD = netHidDim param
-    initG = zeroGrad leafD nonLeafD projD hidD
+    cateHid1Dim = LA.size $ cateMLPB1 param
+    wordHid1Dim = LA.size $ wordMLPB1 param
+    cateMLPOutDim = LA.size $ cateMLPB2 param
+    wordMLPOutDim = LA.size $ wordMLPB2 param
+    nonLeafRawDim = snd $ LA.size $ nonLeafProjW param
+    projDim = netProjDim param
+    hidDim = netHidDim param
+    initG = zeroGrad 8 300 cateHid1Dim wordHid1Dim cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim
     pairs = map (sampleForwardLossGrad param) samples
     losses = map fst pairs
     grads = map snd pairs
@@ -738,44 +903,6 @@ trainLoop param samples lr epoch = do
   when (epoch `mod` 50 == 0) $
     putStrLn $ "Epoch剩余:" ++ show epoch ++ " | AvgLoss:" ++ show avgLoss
   trainLoop newParam samples lr (epoch - 1)
-
--- ===================== 测试入口：可独立运行 =====================
-testPipeline :: IO ()
-testPipeline = do
-  putStrLn "==== Binary Tree-LSTM 【修复完整版】 ===="
-  let
-    dim_word    = 2
-    dim_cat     = 2
-    dim_tag     = 2
-    dim_stru    = 2
-    leafRawDim    = dim_word + dim_cat
-    nonLeafRawDim = dim_cat + dim_tag + dim_stru
-    projDim       = 4
-    hidDim        = 8
-    lr      = 0.008
-    epochs  = 800
-  initP <- initNetParam leafRawDim nonLeafRawDim projDim hidDim
-  let
-    leafA = mkLeaf [0.1,0.3] [0.5,0.2]
-    leafB = mkLeaf [0.4,0.2] [0.1,0.7]
-    treeL = mkNonLeaf [0.3,0.6] [0.2,0.4] [0.1,0.9] leafA EmptySTree
-    treeR = mkNonLeaf [0.7,0.2] [0.5,0.1] [0.3,0.4] EmptySTree leafB
-    samples = [ ((treeL, treeR), Rp) ]
-  putStrLn $ "样本数量：" ++ show (length samples)
-  trainedP <- trainLoop initP samples lr epochs
-  let ((testL,testR), trueAct) = head samples
-      lFwd = treeForwardCached trainedP testL
-      rFwd = treeForwardCached trainedP testR
-      LSTMState hl _ = tfRootState lFwd
-      LSTMState hr _ = tfRootState rFwd
-      concatH = LA.vjoin [hl,hr]
-      logits = clsWeight trainedP #> concatH + clsBias trainedP
-      pred = softmax logits
-      predAct = vecToAction pred
-  putStrLn "\n====预测结果===="
-  putStrLn $ "预测分布:" ++ show pred
-  putStrLn $ "预测动作:" ++ show predAct
-  putStrLn $ "真实动作:" ++ show trueAct
 
 -- ===================== 业务数据库接口 =====================
 --- | 生成N维向量，固定种子，纯函数，无IO
@@ -862,38 +989,21 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVe
     putStrLn $ "  struVec: " ++ show struVec
  -}
     if useEmbVec                 -- Using embedding vector when node is a leaf.
-      then do
-        confInfo <- readFile "Configuration"
-        let wordEmbTbl = getConfProperty "wordEmbTbl" confInfo
-        conn <- getConn
-        let sqlstat = Query $ DS.fromString ("select CAST(emb AS CHAR) from " ++ wordEmbTbl ++ " where word = ?")
-
+      then
         if isPrimTerm semanTerm
           then do                 -- Word seman
 --            putStrLn $ "  It's a primitive term."
             let seman = init $ show semanTerm
+            confInfo <- readFile "Configuration"
+            let wordEmbTbl = getConfProperty "wordEmbTbl" confInfo
+            conn <- getConn
+            let sqlstat = Query $ DS.fromString ("select CAST(emb AS CHAR) from " ++ wordEmbTbl ++ " where word = ?")
             (defs, is) <- query conn sqlstat [MySQLText (T.pack seman)]       -- Search database table 'wordEmbTbl'
             rows <- S.toList is
 --            putStrLn $ "  Size of rows: " ++ show (length rows)
             close conn
             if rows == []                      -- OOV
-              then do
-{-              putStrLn $ seman ++ "  Use <OOV> vector"
-                (defs, is) <- query conn sqlstat [toMySQLText "<OOV>"]
-                rows' <- S.toList is
-                close conn
-                if rows' == []                 -- [[MySQLValue]]
-                  then error "biTreePhraSyn0Seman2SyntaxTreeNodeFeat: OOV is NOT in 'wordEmbTbl'."
-                  else do                      -- rows' = [[MySQLBytes]]
-                    let embVec = (fromMaybe' . fromMySQLJSON) ((rows'!!0)!!0)     -- decode :: ByteString -> Maybe [Double]
-                    return ( STreeNode { nodeData = LA.vjoin [cateVec, LA.fromList embVec]
-                                       , stLeft = EmptySTree
-                                       , stRight = EmptySTree
-                                       , stIsLeaf = True
-                                       }
-                            , oovCnt + 1, noovCnt
-                            )
- -}
+              then
                 return ( STreeNode { nodeData = LA.vjoin [cateVec, LA.fromList oov]
                                    , stLeft = EmptySTree
                                    , stRight = EmptySTree
@@ -904,7 +1014,8 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVe
               else do                         -- Not OOV
                 let embVec = (fromMaybe' . fromMySQLJSON) ((rows!!0)!!0)     -- [Double]
 --                putStrLn $ "  embVec(" ++ seman ++ "): " ++ show embVec
-                return ( STreeNode { nodeData = LA.vjoin [cateVec, LA.fromList embVec]
+                    nodeFeat = LA.vjoin [cateVec, LA.fromList embVec]
+                return ( STreeNode { nodeData = nodeFeat
                                    , stLeft = EmptySTree
                                    , stRight = EmptySTree
                                    , stIsLeaf = True
@@ -915,7 +1026,6 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVe
 --          putStrLn $ "  It's a compound term."
             (lt, oovCnt', noovCnt') <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat lt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov oovCnt noovCnt useEmbVec
             (rt, oovCnt'', noovCnt'') <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat rt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov oovCnt' noovCnt' useEmbVec
-            close conn
             return ( STreeNode { nodeData = LA.vjoin [cateVec, tagVec, struVec]
                                , stLeft = lt
                                , stRight = rt
@@ -930,10 +1040,10 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVe
             putStrLn $ "  Leaf node: " ++ show semanTerm
             putStrLn $ "  Verify cateVec, tagVec, and struVec: " ++ show (cateVec /= v1 && tagVec == v2 && struVec == v3)
             return ( STreeNode { nodeData = cateVec
-                                  , stLeft = EmptySTree
-                                  , stRight = EmptySTree
-                                  , stIsLeaf = True
-                                  }
+                               , stLeft = EmptySTree
+                               , stRight = EmptySTree
+                               , stIsLeaf = True
+                               }
                       , oovCnt + 1, noovCnt
                       )
           else do
@@ -1054,10 +1164,12 @@ trainLoop2 initParam trainSet valSet lr maxEpoch patience batchSize = go initPar
               startId = read syntax_resol_sample_startId :: Int
               endId = read syntax_resol_sample_endId :: Int
               sampleNum = endId - startId + 1
-              dim_proj = getConfProperty "dim_proj" confInfo
+              dim_cate_mlpout = getConfProperty "dim_cate_mlpout" confInfo
+              dim_word_mlpout = getConfProperty "dim_word_mlpout" confInfo
+              dim_hidden = getConfProperty "dim_hidden" confInfo
 
               lr_str = show $ floor (lr * 1000)
-              tblNameSuffix = "_train_dim" ++ dim_proj ++ "_lr" ++ lr_str ++ "_batch" ++ show batchSize ++ "_sampleNum" ++ show sampleNum
+              tblNameSuffix = "_mlp_c" ++ dim_cate_mlpout ++ "_w" ++ dim_word_mlpout ++ "_dim" ++ dim_hidden ++ "_lr" ++ lr_str ++ "_ns" ++ show sampleNum
               tblName = syntax_ambig_resol_model ++ tblNameSuffix
               sqlstat = DS.fromString $ "INSERT INTO " ++ tblName ++ " set epoch = ?, train_set_loss = ?, val_set_loss = ?"
           conn <- getConn
@@ -1087,6 +1199,11 @@ trainOneEpoch param samples lr batchSize = do
   return newParam
 
 --- ===================== 训练与测试：可独立运行 =====================
+testPipeline :: IO ()
+testPipeline = do
+  putStrLn "TODO"
+
+--- ===================== 训练与测试：可独立运行 =====================
 testPipeline2 :: IO ()
 testPipeline2 = do
   putStrLn "==== Binary Tree-LSTM ===="
@@ -1099,7 +1216,11 @@ testPipeline2 = do
     endId = read syntax_resol_sample_endId :: Int
 
     dim_word_str = getConfProperty "dim_word" confInfo
+    dim_word_hide_layer_str = getConfProperty "dim_word_hide_layer" confInfo
+    dim_word_mlpout_str = getConfProperty "dim_word_mlpout" confInfo
     dim_cate_str = getConfProperty "dim_cate" confInfo
+    dim_cate_hide_layer_str = getConfProperty "dim_cate_hide_layer" confInfo
+    dim_cate_mlpout_str = getConfProperty "dim_cate_mlpout" confInfo
     dim_tag_str = getConfProperty "dim_tag" confInfo
     dim_stru_str = getConfProperty "dim_stru" confInfo
     dim_proj_str = getConfProperty "dim_proj" confInfo
@@ -1111,7 +1232,11 @@ testPipeline2 = do
     useEmbVec_str = getConfProperty "leafUsingEmbVec" confInfo
 
     dim_word = read dim_word_str :: Int
+    dim_word_hide_layer = read dim_word_hide_layer_str :: Int
+    dim_word_mlpout = read dim_word_mlpout_str :: Int
     dim_cate = read dim_cate_str :: Int
+    dim_cate_hide_layer = read dim_cate_hide_layer_str :: Int
+    dim_cate_mlpout = read dim_cate_mlpout_str :: Int
     dim_tag = read dim_tag_str :: Int
     dim_stru = read dim_stru_str :: Int
     projDim = read dim_proj_str :: Int
@@ -1122,8 +1247,9 @@ testPipeline2 = do
     batchSize = read batchSize_str :: Int
     useEmbVec = read useEmbVec_str :: Bool
 
-    leafRawDim    = case useEmbVec of
-                      True -> dim_word + dim_cate
+    leafRawDim = dim_cate + dim_word
+    leafMLPDim    = case useEmbVec of
+                      True -> dim_word_mlpout + dim_cate_mlpout
                       False -> dim_word
     nonLeafRawDim = dim_cate + dim_tag + dim_stru
 
@@ -1131,7 +1257,11 @@ testPipeline2 = do
   putStrLn $ " syntax_resol_sample_startId: " ++ syntax_resol_sample_startId
   putStrLn $ " syntax_resol_sample_endId: " ++ syntax_resol_sample_endId
   putStrLn $ " dim_word: " ++ dim_word_str
+  putStrLn $ " dim_word_hide_layer: " ++ dim_word_hide_layer_str
+  putStrLn $ " dim_word_mlpout: " ++ dim_word_mlpout_str
   putStrLn $ " dim_cate: " ++ dim_cate_str
+  putStrLn $ " dim_cate_hide_layer: " ++ dim_cate_hide_layer_str
+  putStrLn $ " dim_cate_mlpout: " ++ dim_cate_mlpout_str
   putStrLn $ " dim_tag: " ++ dim_tag_str
   putStrLn $ " dim_stru: " ++ dim_stru_str
   putStrLn $ " projDim: " ++ dim_proj_str
@@ -1152,7 +1282,7 @@ testPipeline2 = do
           startId = read syntax_resol_sample_startId :: Int
           endId = read syntax_resol_sample_endId :: Int
           sampleNum = endId - startId + 1
-          tblNameSuffix = "_train_dim" ++ dim_proj_str ++ "_lr" ++ lr_str ++ "_batch" ++ show batchSize ++ "_sampleNum" ++ show sampleNum
+          tblNameSuffix = "_mlp_c" ++ dim_cate_mlpout_str ++ "_w" ++ dim_word_mlpout_str ++ "_dim" ++ dim_hidden_str ++ "_lr" ++ lr_str ++ "_ns" ++ show sampleNum
           tblName = syntax_ambig_resol_model ++ tblNameSuffix
           sqlstat1 = DS.fromString $ "SELECT EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA='ccg4c' AND TABLE_NAME='"
                                      ++ tblName ++ "') AS table_exist"
@@ -1180,7 +1310,8 @@ testPipeline2 = do
                    closeStmt conn stmt
                    close conn
 
-                   initP <- initNetParam leafRawDim nonLeafRawDim projDim hidDim
+                   initP <- initNetParam dim_cate dim_word dim_cate_hide_layer dim_word_hide_layer dim_cate_mlpout dim_word_mlpout nonLeafRawDim projDim hidDim
+
                    samples0 <- buildSampleSet dim_cate dim_tag dim_stru
                    let samples = map (\x -> ((recLeftTree x, recRightTree x), recTargetAct x)) samples0
                    putStrLn $ "总样本数量：" ++ show (length samples)
