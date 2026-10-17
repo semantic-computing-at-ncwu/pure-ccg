@@ -288,7 +288,7 @@ projectRawFeat NetParam{..} isLeaf rawFeat =
 -- 随机向量
 randVec :: Int -> StdGen -> (Vector Double, StdGen)
 randVec n gen
-  | n <= 0    = error "randVec: vector size > 0 required"
+  | n < 0    = error "randVec: vector size >= 0 required"
   | otherwise =
       let go :: Int -> StdGen -> [Double] -> ([Double], StdGen)
           go 0 g acc = (reverse acc, g)
@@ -302,7 +302,7 @@ randVec n gen
 -- 随机矩阵
 randMat :: Int -> Int -> StdGen -> (Matrix Double, StdGen)
 randMat rows cols gen
-  | rows <=0 || cols <=0 = error "randMat: rows/cols >0 required"
+  | rows < 0 || cols < 0 = error "randMat: rows/cols >=0 required"
   | otherwise =
       let total = rows * cols
           (vec, g') = randVec total gen
@@ -619,26 +619,28 @@ treeForwardCached param st@STreeNode{nodeData = feat, stLeft = l, stRight = r, s
     LSTMState hr cr = tfRootState rightRes
     NetParam{..} = param
     hidDim = netHidDim param
+    dim_cate = snd $ LA.size cateMLPW1                 -- Usually, it is 8.
+    dim_word = snd $ LA.size wordMLPW1                 -- Usually, it is 300.
 
     -- ========== 新增叶子MLP分支 ==========
     (cateVec, wordVec, cateMLPOut, cateH1, cateH1Pre, wordMLPOut, wordH1, wordH1Pre, rawFeatAfterMLP)
       | isLeafFlag =
           let
-            cateRaw = subVector 0 8 feat          -- 前8维 cateVec
-            wordRaw = subVector 8 300 feat        -- 后300维 wordVec
+            cateRaw = subVector 0 dim_cate feat               -- 前8维 cateRaw
+            wordRaw = subVector dim_cate dim_word feat        -- 后300维 wordRaw
             (cateOut, cateH1, cateH1Pre) = mlpCateForward param cateRaw
             (wordOut, wordH1, wordH1Pre) = mlpWordForward param wordRaw
             combinedMLPFeat = LA.vjoin [cateOut, wordOut]
           in (cateRaw, wordRaw, cateOut, cateH1, cateH1Pre, wordOut, wordH1, wordH1Pre, combinedMLPFeat)
       | otherwise =
           -- 非叶子节点：保留原有feat，MLP缓存填零向量
-          let zero8 = konst 0 8
-              zero300 = konst 0 300
+          let zero8 = konst 0 dim_cate
+              zero300 = konst 0 dim_word
               zeroCateH = konst 0 (LA.size cateMLPB1)
               zeroWordH = konst 0 (LA.size wordMLPB1)
               zeroCateOut = konst 0 (LA.size cateMLPB2)
               zeroWordOut = konst 0 (LA.size wordMLPB2)
-            in (zero8, zero300, zeroCateOut, zeroCateH, zeroCateH, zeroWordOut, zeroWordH, zeroWordH, feat)
+          in (zero8, zero300, zeroCateOut, zeroCateH, zeroCateH, zeroWordOut, zeroWordH, zeroWordH, feat)
 
     projFeat = projectRawFeat param isLeafFlag rawFeatAfterMLP
     -- ========== 输入门/输出门/cell候选 并入左右子树隐状态 ==========
@@ -762,6 +764,8 @@ backwardNode param@NetParam{..} nc@NodeCache{..} dLdh dLdc =
                       True -> tr' leafProjW #> dLdProjFeat      -- dL/d [cateMLPout; wordMLPout]
                       False -> tr' nonLeafProjW #> dLdProjFeat  -- dL/d [cateVec; tagVec; struVec]
 
+    dim_cate = snd $ LA.size cateMLPW1        -- dim_cate, usually it is 8.
+    dim_word = snd $ LA.size wordMLPW1        -- dim_word, usually it is 300.
     cateHid1Dim = LA.size cateMLPB1
     wordHid1Dim = LA.size wordMLPB1
     cateMLPOutDim = LA.size cateMLPB2
@@ -769,7 +773,7 @@ backwardNode param@NetParam{..} nc@NodeCache{..} dLdh dLdc =
     nonLeafRawDim = snd $ LA.size nonLeafProjW
     projDim = LA.size leafProjB
     hidDim = LA.size inpB
-    zeroG = zeroGrad 8 300 cateHid1Dim wordHid1Dim cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim      -- Zero gradient network.
+    zeroG = zeroGrad dim_cate dim_word cateHid1Dim wordHid1Dim cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim      -- Zero gradient network.
 
     (projGrad, dLdRawFeat)
       | ncIsLeaf =
@@ -811,6 +815,8 @@ backwardNode param@NetParam{..} nc@NodeCache{..} dLdh dLdc =
 backwardTree :: NetParam -> SyntaxTree NodeCache -> Vector Double -> Vector Double -> NetGrad
 backwardTree param EmptySTree _ _ =
   let
+    dim_cate = snd $ LA.size (cateMLPW1 param)          -- Usually it is 8.
+    dim_word = snd $ LA.size (wordMLPW1 param)          -- Usually it is 300.
     cateHid1Dim = fst $ LA.size (cateMLPW1 param)
     wordHid1Dim = fst $ LA.size (wordMLPW1 param)
     cateMLPOutDim = fst $ LA.size (cateMLPW2 param)
@@ -818,7 +824,7 @@ backwardTree param EmptySTree _ _ =
     nonLeafRawDim = snd $ LA.size (nonLeafProjW param)
     projDim = fst $ LA.size (leafProjW param)
     hidDim = fst $ LA.size (inpW param)
-  in zeroGrad 8 300 cateHid1Dim wordHid1Dim cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim
+  in zeroGrad dim_cate dim_word cateHid1Dim wordHid1Dim cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim
 backwardTree param (STreeNode cache leftTree rightTree _) dLdh dLdc =
   let
     (nodeGrad, dLdhL, dLdcL, dLdhR, dLdcR, _) = backwardNode param cache dLdh dLdc
@@ -861,6 +867,8 @@ sampleForwardLossGrad param ((ltree, rtree), action) =
 batchTrainStep :: NetParam -> [TrainSample] -> Double -> (Double, NetParam)
 batchTrainStep param samples lr =
   let
+    dim_cate = snd $ LA.size (cateMLPW1 param)          -- Usually it is 8.
+    dim_word = snd $ LA.size (wordMLPW1 param)          -- Usually it is 300.
     cateHid1Dim = LA.size $ cateMLPB1 param
     wordHid1Dim = LA.size $ wordMLPB1 param
     cateMLPOutDim = LA.size $ cateMLPB2 param
@@ -868,7 +876,7 @@ batchTrainStep param samples lr =
     nonLeafRawDim = snd $ LA.size $ nonLeafProjW param
     projDim = netProjDim param
     hidDim = netHidDim param
-    initG = zeroGrad 8 300 cateHid1Dim wordHid1Dim cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim
+    initG = zeroGrad dim_cate dim_word cateHid1Dim wordHid1Dim cateMLPOutDim wordMLPOutDim nonLeafRawDim projDim hidDim
     pairs = map (sampleForwardLossGrad param) samples
     losses = map fst pairs
     grads = map snd pairs
@@ -883,14 +891,14 @@ batchTrainStep param samples lr =
 
 -- ===================== 树构造辅助函数（测试用） =====================
 mkLeaf :: [Double] -> [Double] -> RawSyntaxTree
-mkLeaf wordEmb catEmb =
-  let feat = LA.fromList (wordEmb ++ catEmb)
+mkLeaf cateVec wordEmb =
+  let feat = LA.fromList (cateVec ++ wordEmb)
   in STreeNode feat EmptySTree EmptySTree True
 
 mkNonLeaf :: [Double] -> [Double] -> [Double] -> RawSyntaxTree -> RawSyntaxTree -> RawSyntaxTree
 mkNonLeaf _ _ _ EmptySTree EmptySTree = error "mkNonLeaf: Parameter error."
-mkNonLeaf cat tag phra l r =
-  let feat = LA.fromList (cat ++ tag ++ phra)
+mkNonLeaf cateVec tagVec struVec l r =
+  let feat = LA.fromList (cateVec ++ tagVec ++ struVec)
   in STreeNode feat l r False
 
 -- ===================== 训练循环：增加样本 shuffle =====================
@@ -1037,8 +1045,8 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVe
       else
         if isPrimTerm semanTerm
           then do
-            putStrLn $ "  Leaf node: " ++ show semanTerm
-            putStrLn $ "  Verify cateVec, tagVec, and struVec: " ++ show (cateVec /= v1 && tagVec == v2 && struVec == v3)
+--            putStrLn $ "  Leaf node: " ++ show semanTerm
+--            putStrLn $ "  Verify cateVec, tagVec, and struVec: " ++ show (cateVec /= v1 && tagVec == v2 && struVec == v3)
             return ( STreeNode { nodeData = cateVec
                                , stLeft = EmptySTree
                                , stRight = EmptySTree
@@ -1047,8 +1055,8 @@ biTreePhraSyn0Seman2SyntaxTreeNodeFeat (Node (phraSyn0, semanTerm) lt rt) cateVe
                       , oovCnt + 1, noovCnt
                       )
           else do
-            putStrLn $ " Non-leaf node: " ++ show semanTerm
-            putStrLn $ " Verify cateVec, tagVec, and struVec: " ++ show (cateVec /= v1 && tagVec /= v2 && struVec /= v3)
+--            putStrLn $ " Non-leaf node: " ++ show semanTerm
+--            putStrLn $ " Verify cateVec, tagVec, and struVec: " ++ show (cateVec /= v1 && tagVec /= v2 && struVec /= v3)
             (lt, oovCnt', noovCnt') <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat lt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov oovCnt noovCnt useEmbVec
             (rt, oovCnt'', noovCnt'') <- biTreePhraSyn0Seman2SyntaxTreeNodeFeat rt cateVecMap tagVecMap struVecMap dim_cate dim_tag dim_stru oov oovCnt' noovCnt' useEmbVec
             return ( STreeNode { nodeData = LA.vjoin [cateVec, tagVec, struVec]
@@ -1069,11 +1077,7 @@ buildSampleSet dim_cate dim_tag dim_stru = do
       endId = read syntax_resol_sample_endId :: Int
       leafUsingEmbVec = getConfProperty "leafUsingEmbVec" confInfo
       useEmbVec = read leafUsingEmbVec :: Bool
-{-
-  putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
-  putStrLn $ " syntax_resol_sample_startId: " ++ syntax_resol_sample_startId
-  putStrLn $ " syntax_resol_sample_endId: " ++ syntax_resol_sample_endId
- -}
+
   conn <- getConn
   let sqlstat = DS.fromString $ "select leftOverTree, leftOverSeman, rightOverTree, rightOverSeman, clauTagPrior from "
                                 ++ syntax_ambig_resol_model ++ " where id >= ? && id <= ?"
@@ -1164,12 +1168,13 @@ trainLoop2 initParam trainSet valSet lr maxEpoch patience batchSize = go initPar
               startId = read syntax_resol_sample_startId :: Int
               endId = read syntax_resol_sample_endId :: Int
               sampleNum = endId - startId + 1
+              dim_cate_hide_layer = getConfProperty "dim_cate_hide_layer" confInfo
               dim_cate_mlpout = getConfProperty "dim_cate_mlpout" confInfo
               dim_word_mlpout = getConfProperty "dim_word_mlpout" confInfo
               dim_hidden = getConfProperty "dim_hidden" confInfo
 
               lr_str = show $ floor (lr * 1000)
-              tblNameSuffix = "_mlp_c" ++ dim_cate_mlpout ++ "_w" ++ dim_word_mlpout ++ "_dim" ++ dim_hidden ++ "_lr" ++ lr_str ++ "_ns" ++ show sampleNum
+              tblNameSuffix = "_mlp_h" ++ dim_cate_hide_layer ++ "_c" ++ dim_cate_mlpout ++ "_w" ++ dim_word_mlpout ++ "_dim" ++ dim_hidden ++ "_lr" ++ lr_str ++ "_ns" ++ show sampleNum
               tblName = syntax_ambig_resol_model ++ tblNameSuffix
               sqlstat = DS.fromString $ "INSERT INTO " ++ tblName ++ " set epoch = ?, train_set_loss = ?, val_set_loss = ?"
           conn <- getConn
@@ -1239,6 +1244,9 @@ testPipeline2 = do
     dim_cate_mlpout = read dim_cate_mlpout_str :: Int
     dim_tag = read dim_tag_str :: Int
     dim_stru = read dim_stru_str :: Int
+    leafRawDim = dim_cate + dim_word
+    leafMLPDim = dim_word_mlpout + dim_cate_mlpout
+    nonLeafRawDim = dim_cate + dim_tag + dim_stru
     projDim = read dim_proj_str :: Int
     hidDim = read dim_hidden_str :: Int
     lr = read lr_str :: Double
@@ -1246,12 +1254,6 @@ testPipeline2 = do
     earlyStopPatience = read earlyStopPatience_str :: Int
     batchSize = read batchSize_str :: Int
     useEmbVec = read useEmbVec_str :: Bool
-
-    leafRawDim = dim_cate + dim_word
-    leafMLPDim    = case useEmbVec of
-                      True -> dim_word_mlpout + dim_cate_mlpout
-                      False -> dim_word
-    nonLeafRawDim = dim_cate + dim_tag + dim_stru
 
   putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
   putStrLn $ " syntax_resol_sample_startId: " ++ syntax_resol_sample_startId
@@ -1264,6 +1266,9 @@ testPipeline2 = do
   putStrLn $ " dim_cate_mlpout: " ++ dim_cate_mlpout_str
   putStrLn $ " dim_tag: " ++ dim_tag_str
   putStrLn $ " dim_stru: " ++ dim_stru_str
+  putStrLn $ " leafRawDim: " ++ show leafRawDim
+  putStrLn $ " leafMLPDim: " ++ show leafMLPDim
+  putStrLn $ " nonLeafRawDim: " ++ show nonLeafRawDim
   putStrLn $ " projDim: " ++ dim_proj_str
   putStrLn $ " hidDim: " ++ dim_hidden_str
   putStrLn $ " lr: " ++ lr_str
@@ -1282,7 +1287,7 @@ testPipeline2 = do
           startId = read syntax_resol_sample_startId :: Int
           endId = read syntax_resol_sample_endId :: Int
           sampleNum = endId - startId + 1
-          tblNameSuffix = "_mlp_c" ++ dim_cate_mlpout_str ++ "_w" ++ dim_word_mlpout_str ++ "_dim" ++ dim_hidden_str ++ "_lr" ++ lr_str ++ "_ns" ++ show sampleNum
+          tblNameSuffix = "_mlp_h" ++ dim_cate_hide_layer_str ++ "_c" ++ dim_cate_mlpout_str ++ "_w" ++ dim_word_mlpout_str ++ "_dim" ++ dim_hidden_str ++ "_lr" ++ lr_str ++ "_ns" ++ show sampleNum
           tblName = syntax_ambig_resol_model ++ tblNameSuffix
           sqlstat1 = DS.fromString $ "SELECT EXISTS(SELECT 1 FROM information_schema.TABLES WHERE TABLE_SCHEMA='ccg4c' AND TABLE_NAME='"
                                      ++ tblName ++ "') AS table_exist"
@@ -1411,7 +1416,7 @@ testPipeline2 = do
                        putStrLn "\n====【完整测试集正式评估结果】===="
                        putStrLn $ "测试集平均损失：" ++ show totalLoss
                        putStrLn $ "正确样本数：" ++ show correct ++ " / " ++ show total
-                       putStrLn $ "测试集准确率：" ++ show acc
+                       putStrLn $ "测试集正确率：" ++ show acc
 
                        putStrLn "\n====【分类别的完整评估指标】===="
                        putStrLn $ "  [(pred, label)]: " ++ show predPairs

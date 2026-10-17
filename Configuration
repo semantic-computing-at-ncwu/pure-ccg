@@ -281,6 +281,7 @@ reduceOrNot:True
 wordEmbTbl:sgns_renmin_word
 
 # Dimensions of embedding vectors for word, category, grammar tag, and phrasal structure.
+# dim_word = 300 in word-embedding vectors for RENMIN Daily Paper.
 dim_word:300
 dim_cate:8
 dim_tag:16
@@ -288,8 +289,9 @@ dim_stru:16
 
 # Two MLPs for leaf feature inputs.
 # Dimensions of MLP hide layer and MLP output for word and category, here 'preproj' means preprojection.
-dim_cate_hide_layer:64
-dim_word_hide_layer:64
+# Suppose dim_cate_hide_layer = dim_word_hide_layer.
+dim_cate_hide_layer:128
+dim_word_hide_layer:128
 dim_word_mlpout:64
 dim_cate_mlpout:64
 
@@ -316,6 +318,6 @@ syntax_resol_sample_startId:1
 syntax_resol_sample_endId:1000
 
 # Leaf node uses embedding semantics or not.
-# False: Not use embedding vector.
+# False: Not use embedding vector, at this moment dim_word = 0 and dim_word_mlpout = 0.
 # True: Use embedding vector.
 leafUsingEmbVec:True
