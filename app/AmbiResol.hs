@@ -6,10 +6,12 @@
 module AmbiResol (
     PhraSyn0,            -- (Category, Tag, PhraStru)
     PhraSyn,             -- (Category, Tag, PhraStru, Span)
-    PhraSyn1,            -- (Category, Tag, PhraStru, Seman, Span)
+    PhraSyn0se,          -- (Category, Tag, PhraStru, Seman)      Note: Member order is NOT same with that in PhraCate!
+    PhraSyn1,            -- (Category, Tag, PhraStru, Seman, Span)    Note: Member order is NOT same with that in PhraCate!
     getPhraSyn0FromStr,  -- String -> PhraSyn0
     nullPhraSyn0,        -- (Nil, "", "")
     nullPhraSyn,         -- (Nil, "", "", -1)
+    nullPhraSyn0se,      -- (Nil, "", "", "")
     nullPhraSyn1,        -- (Nil, "", "", "", -1)
     SIdx,                -- Int
     LeftExtend,          -- [PhraSyn]
@@ -79,9 +81,11 @@ module AmbiResol (
     readPriorFromStr,    -- String -> Prior
     readAmbiResol1FromStr,   -- String -> AmbiResol1
     readPhraSyn0FromStr,     -- String -> PhraSyn0
+    readPhraSyn0seFromStr,        -- String -> PhraSyn0
     readPhraSynFromStr,      -- String -> PhraSyn
     readPhraSyn1FromStr,     -- String -> PhraSyn1
     readPhraSyn0ListFromStr,      -- String -> [PhraSyn0]
+    readPhraSyn0seListFromStr,      -- String -> [PhraSyn0]
     readPhraSynListFromStr,       -- String -> [PhraSyn]
     readBiTreePhraSyn0FromStr,    -- String -> BiTree PhraSyn0
     readBiTreePhraSynFromStr,     -- String -> BiTree PhraSyn
@@ -95,9 +99,11 @@ module AmbiResol (
     nScdToString,        -- [Scd] -> String
     phraSyn0ToString,    -- PhraSyn0 -> String
     phraSynToString,     -- PhraSyn -> String
+    phraSyn0seToString,  -- PhraSyn0se -> String
     phraSyn1ToString,    -- PhraSyn1 -> String
     nPhraSyn0ToString,   -- [PhraSyn0] -> String
     nPhraSynToString,    -- [PhraSyn] -> String
+    nPhraSyn0seToString, -- [PhraSyn0se] -> String
     nPhraSyn1ToString,   -- [PhraSyn1] -> String
     contextOfSGToString, -- ContextOfSG -> String
     struGeneToString,    -- StruGene -> String
@@ -160,31 +166,41 @@ module AmbiResol (
 
     phraCateTree2PhraSynTree,     -- BiTree PhraCate -> BiTree PhraSyn
     phraCateTree2PhraSyn0Tree,    -- BiTree PhraCate -> BiTree PhraSyn0
+    phraCateTree2PhraSyn0seTree,  -- BiTree PhraCate -> BiTree PhraSyn0se
     phraCateTree2PhraSyn1Tree,    -- BiTree PhraCate -> BiTree PhraSyn1
 
     phraCate2PhraSyn0,   -- PhraCate -> PhraSyn0
     phraCate2PhraSyn,    -- PhraCate -> PhraSyn
+    phraCate2PhraSyn0se, -- PhraCate -> PhraSyn0se
     phraCate2PhraSyn1,   -- PhraCate -> PhraSyn1
     biTreePhraCate2BiTreePhraSyn,   -- BiTree PhraCate -> BiTree PhraSyn
     biTreePhraCate2BiTreePhraSyn0,  -- BiTree PhraCate -> BiTree PhraSyn0
+    biTreePhraCate2BiTreePhraSyn0se,   -- BiTree PhraCate -> BiTree PhraSyn0se
     biTreePhraCate2BiTreePhraSyn1,  -- BiTree PhraCate -> BiTree PhraSyn1
 
     phraSyns2RulesToString,    -- ([PhraSyn],[Rule]) -> String
     phraSyn0s2RulesToString,   -- ([PhraSyn0],[Rule]) -> String
+    phraSyn0ses2RulesToString,   -- ([PhraSyn0se],[Rule]) -> String
     phraSyn1s2RulesToString,   -- ([PhraSyn1],[Rule]) -> String
     biTreePhraSynToString,     -- BiTree PhraSyn -> String
     biTreePhraSyn0ToString,    -- BiTree PhraSyn0 -> String
+    biTreePhraSyn0seToString,    -- BiTree PhraSyn0se -> String
     biTreePhraSyn1ToString,    -- BiTree PhraSyn1 -> String
     biTreePhraSyn2RulesToString,    -- (BiTree PhraSyn,[Rule]) -> String
     biTreePhraSyn02RulesToString,   -- (BiTree PhraSyn0,[Rule]) -> String
+    biTreePhraSyn0se2RulesToString, -- (BiTree PhraSyn0se,[Rule]) -> String
     biTreePhraSyn12RulesToString,   -- (BiTree PhraSyn1,[Rule]) -> String
     stringToPhraSyns2Rules,     -- String -> ([PhraSyn],[Rule])
     stringToPhraSyn0s2Rules,    -- String -> ([PhraSyn0],[Rule])
+    stringToPhraSyn0ses2Rules,      -- String -> ([PhraSyn0se],[Rule])
     stringToBiTreePhraSyn,      -- String -> BiTree PhraSyn
     stringToBiTreePhraSyn0,     -- String -> BiTree PhraSyn0
+    stringToBiTreePhraSyn0se,   -- String -> BiTree PhraSyn0se
     stringToBiTreePhraSyn1,     -- String -> BiTree PhraSyn1
     stringToBiTreePhraSyn2Rules,    -- String -> (BiTree PhraSyn, [Rule])
     stringToBiTreePhraSyn02Rules,   -- String -> (BiTree PhraSyn0, [Rule])
+    stringToBiTreePhraSyn0se2Rules,   -- String -> (BiTree PhraSyn0se, [Rule])
+    stringToBiTreePhraSyn12Rules,   -- String -> (BiTree PhraSyn1, [Rule])
 
     ContextOfCC1,        -- [PhraSyn]
     ContextOfCC2,        -- [PhraSyn0]
@@ -198,13 +214,13 @@ module AmbiResol (
 import Category
 import Phrase
 import Rule (Rule)
+import Corpus
+import Database
 import Utils
 import Data.List (nub, elemIndex)
 import Data.Tuple.Utils
 import Text.Printf
 import GHC.Generics (Generic)
-import Corpus
-import Database
 import Database.MySQL.Base
 import qualified Data.String as DS
 import qualified System.IO.Streams as S
@@ -212,10 +228,12 @@ import qualified Data.Map.Strict as M
 
 {- Syntactic attribues of a phrase, including its syntactic category, tag of grammar rule by which the phrase is obtained,
  - structural type of the phrase, and phrasal span.
+ - Semantic attribute of a phrase is just logic semancic expression.
  - In Chinese, sentential parsing includes morphological parsing, so rule 'A/n->' contains the two aspects.
  -}
 type PhraSyn0 = (Category, Tag, PhraStru)
 type PhraSyn = (Category, Tag, PhraStru, Span)
+type PhraSyn0se = (Category, Tag, PhraStru, Seman)
 type PhraSyn1 = (Category, Tag, PhraStru, Seman, Span)
 
 -- Get PhraSyn0 from its string.
@@ -227,6 +245,7 @@ getPhraSyn0FromStr str = (getCateFromString cate, tag, phrastru)
 {- Null phrasal syntax, in which grammar tag, phrasal structure and phrasal span use their not existing values.
  - PhraSyn :: (Category, Tag, PhraStru, Span)
  - PhraSyn0 :: (Category, Tag, PhraStru)
+ - PhraSyn0se :: (Category, Tag, PhraStru, Seman)
  - PhraSyn1 :: (Category, Tag, PhraStru, Seman, Span)
  -}
 
@@ -235,6 +254,9 @@ nullPhraSyn = (Nil, "", "", -1)
 
 nullPhraSyn0 :: PhraSyn0
 nullPhraSyn0 = (Nil, "", "")
+
+nullPhraSyn0se :: PhraSyn0se
+nullPhraSyn0se = (Nil, "", "", "")
 
 nullPhraSyn1 :: PhraSyn1
 nullPhraSyn1 = (Nil, "", "", "", -1)
@@ -607,6 +629,25 @@ readPhraSyn0FromStr str = (ca, ta, ps)
            True -> read psStr :: PhraStru        -- psStr is a string literal (enclosed in quotes, with proper escaping), such as "\"AHn\"".
            False -> psStr
 
+{- Get an instance of PhraSyn0se from a string, where PhraSyn0se :: (Category, Tag, PhraStru, Seman).
+ - Tag, PhraStru, and Seman are aliases of type String.
+ - Here, if exist, symbol '"' in two ends of a string literal are removed.
+ -}
+readPhraSyn0seFromStr :: String -> PhraSyn0se
+readPhraSyn0seFromStr str = (ca, ta, ps, se)
+    where
+    (caStr, taStr, psStr, seStr)  = stringToQuadruple str
+    ca = getCateFromString caStr
+    ta = case (head taStr == '"' && last taStr == '"') of
+           True -> read taStr :: Tag             -- taStr is a string literal (enclosed in quotes, with proper escaping), such as "\">\"".
+           False -> taStr
+    ps = case (head psStr == '"' && last psStr == '"') of
+           True -> read psStr :: PhraStru        -- psStr is a string literal (enclosed in quotes, with proper escaping), such as "\"AHn\"".
+           False -> psStr
+    se = case (head seStr == '"' && last seStr == '"') of
+           True -> read seStr :: Seman           -- seStr is a string literal (enclosed in quotes, with proper escaping), such as "\"我'\"".
+           False -> seStr
+
 {- Get an instance of PhraSyn1 from a string, where PhraSyn1 :: (Category, Tag, PhraStru, Seman, Span).
  - Tag, PhraStru, and Seman are aliases of type String.
  - Here, if exist, symbol '"' in two ends of a string literal are removed.
@@ -631,6 +672,11 @@ readPhraSyn0ListFromStr :: String -> [PhraSyn0]
 readPhraSyn0ListFromStr "[]" = []
 readPhraSyn0ListFromStr str = readPhraSyn0ListFromStrList (stringToList str)
 
+readPhraSyn0seListFromStr :: String -> [PhraSyn0se]
+readPhraSyn0seListFromStr "[]" = []
+readPhraSyn0seListFromStr str = readPhraSyn0seListFromStrList (stringToList str)
+
+
 readPhraSynListFromStr :: String -> [PhraSyn]
 readPhraSynListFromStr "[]" = []
 readPhraSynListFromStr str = readPhraSynListFromStrList (stringToList str)
@@ -638,6 +684,10 @@ readPhraSynListFromStr str = readPhraSynListFromStrList (stringToList str)
 readPhraSyn0ListFromStrList :: [String] -> [PhraSyn0]
 readPhraSyn0ListFromStrList [] = []
 readPhraSyn0ListFromStrList (s:ss) = readPhraSyn0FromStr s : (readPhraSyn0ListFromStrList ss)
+
+readPhraSyn0seListFromStrList :: [String] -> [PhraSyn0se]
+readPhraSyn0seListFromStrList [] = []
+readPhraSyn0seListFromStrList (s:ss) = readPhraSyn0seFromStr s : (readPhraSyn0seListFromStrList ss)
 
 readPhraSynListFromStrList :: [String] -> [PhraSyn]
 readPhraSynListFromStrList [] = []
@@ -748,6 +798,17 @@ phraSynToString phs = "(" ++ ca ++ "," ++ ta ++ "," ++ ps ++ "," ++ sp ++ ")"
       ps = thd4 phs
       sp = show (fth4 phs)
 
+{- Get the string of a PhraSyn0se.
+ - PhraSyn0se :: (Category, Tag, PhraStru, Seman)
+ -}
+phraSyn0seToString :: PhraSyn0se -> String
+phraSyn0seToString phs = "(" ++ ca ++ "," ++ ta ++ "," ++ ps ++ "," ++ se ++ ")"
+    where
+      ca = show (fst4 phs)
+      ta = snd4 phs
+      ps = thd4 phs
+      se = fth4 phs
+
 {- Get the string of a PhraSyn1.
  - PhraSyn1 :: (Category, Tag, PhraStru, Seman, Span)
  -}
@@ -767,6 +828,10 @@ nPhraSynToString nps = listToString (map phraSynToString nps)
 -- Get the string of [PhraSyn0]
 nPhraSyn0ToString :: [PhraSyn0] -> String
 nPhraSyn0ToString nps0 = listToString (map phraSyn0ToString nps0)
+
+-- Get the string of [PhraSyn1se]
+nPhraSyn0seToString :: [PhraSyn0se] -> String
+nPhraSyn0seToString nps0se = listToString (map phraSyn0seToString nps0se)
 
 -- Get the string of [PhraSyn1]
 nPhraSyn1ToString :: [PhraSyn1] -> String
@@ -1082,6 +1147,20 @@ phraCateTree2PhraSyn0Tree pcTree
     | pcTree == Empty = Empty
     | otherwise = Node (((ctpOfCate . getRoot) pcTree)!!0) (phraCateTree2PhraSyn0Tree (getLeftSub pcTree)) (phraCateTree2PhraSyn0Tree (getRightSub pcTree))
 
+{- Convert a binary tree of phrasal categories to a binary tree of phrasal syntactic structure PhraSyn0se.
+ - PhraSyn0se :: (Category, Tag, PhraStru, Seman)
+ - Suppose all phrasal categories are atomic, namely only one element in list [(Category,Tag,Seman,PhraStru,Act)].
+ -}
+phraCateTree2PhraSyn0seTree :: BiTree PhraCate -> BiTree PhraSyn0se
+phraCateTree2PhraSyn0seTree pcTree
+    | pcTree == Empty = Empty
+    | otherwise = let ctsp = ((ctspOfCate . getRoot) pcTree)!!0
+                      cate = fst4 ctsp
+                      tag = snd4 ctsp
+                      seman = thd4 ctsp
+                      stru = fth4 ctsp
+                  in Node (cate, tag, stru, seman) (phraCateTree2PhraSyn0seTree (getLeftSub pcTree)) (phraCateTree2PhraSyn0seTree (getRightSub pcTree))
+
 {- Convert a binary tree of phrasal categories to a binary tree of phrasal syntactic structure PhraSyn1.
  - PhraSyn1 :: (Category, Tag, PhraStru, Seman, Span)
  - Suppose all phrasal categories are atomic, namely only one element in list [(Category,Tag,Seman,PhraStru,Act)].
@@ -1103,6 +1182,13 @@ phraCateTree2PhraSyn1Tree pcTree
 phraCate2PhraSyn0 :: PhraCate -> PhraSyn0
 phraCate2PhraSyn0 ((_, _), [(cate, tag, _, phraStru, _)], _) = (cate, tag, phraStru)
 phraCate2PhraSyn0 ((_, _), list, _) = error $ "phraCate2PhraSyn0: In which the list has " ++ show (length list) ++ " elements."
+
+{- Get the corresponding PhraSyn0se value from a PhraCate value.
+ - Suppose the PhraCate value is atomic, that is, in which the list is a singleton list.
+ -}
+phraCate2PhraSyn0se :: PhraCate -> PhraSyn0se
+phraCate2PhraSyn0se ((_, _), [(cate, tag, seman, phraStru, _)], _) = (cate, tag, phraStru,seman)
+phraCate2PhraSyn0se ((_, _), list, _) = error $ "phraCate2PhraSyn0se: In which the list has " ++ show (length list) ++ " elements."
 
 {- Get the corresponding PhraSyn value from a PhraCate value.
  - Suppose the PhraCate value is atomic, that is, in which the list is a singleton list.
@@ -1134,6 +1220,17 @@ biTreePhraCate2BiTreePhraSyn0 :: BiTree PhraCate -> BiTree PhraSyn0
 biTreePhraCate2BiTreePhraSyn0 Empty = Empty
 biTreePhraCate2BiTreePhraSyn0 (Node r lst rst) = Node ((ctpOfCate r)!!0) (biTreePhraCate2BiTreePhraSyn0 lst) (biTreePhraCate2BiTreePhraSyn0 rst)
 
+{- Get corresponding BiTree PhraSyn0se instance from BiTree PhraCate instance.
+ - PhraCate :: ((Start, Span), [(Category, Tag, Seman, PhraStru, Act)], SecStart)
+ - PhraSyn0se :: (Category, Tag, PhraStru, Seman)
+ - Suppose every PhraCate instance is atomic.
+ -}
+biTreePhraCate2BiTreePhraSyn0se :: BiTree PhraCate -> BiTree PhraSyn0se
+biTreePhraCate2BiTreePhraSyn0se Empty = Empty
+biTreePhraCate2BiTreePhraSyn0se (Node r lst rst) = Node (fst4 ctsp, snd4 ctsp, fth4 ctsp, thd4 ctsp) (biTreePhraCate2BiTreePhraSyn0se lst) (biTreePhraCate2BiTreePhraSyn0se rst)
+    where
+    ctsp = (ctspOfCate r)!!0
+
 {- Get corresponding BiTree PhraSyn1 instance from BiTree PhraCate instance.
  - PhraCate :: ((Start, Span), [(Category, Tag, Seman, PhraStru, Act)], SecStart)
  - PhraSyn1 :: (Category, Tag, PhraStru, Seman, Span)
@@ -1151,6 +1248,9 @@ phraSyns2RulesToString (nPhraSyn, rules) = "(" ++ nPhraSynToString nPhraSyn ++ "
 phraSyn0s2RulesToString :: ([PhraSyn0],[Rule]) -> String
 phraSyn0s2RulesToString (nPhraSyn0, rules) = "(" ++ nPhraSyn0ToString nPhraSyn0 ++ "," ++ show rules ++ ")"
 
+phraSyn0ses2RulesToString :: ([PhraSyn0se],[Rule]) -> String
+phraSyn0ses2RulesToString (nPhraSyn0se, rules) = "(" ++ nPhraSyn0seToString nPhraSyn0se ++ "," ++ show rules ++ ")"
+
 phraSyn1s2RulesToString :: ([PhraSyn1],[Rule]) -> String
 phraSyn1s2RulesToString (nPhraSyn1, rules) = "(" ++ nPhraSyn1ToString nPhraSyn1 ++ "," ++ show rules ++ ")"
 
@@ -1162,6 +1262,10 @@ biTreePhraSyn0ToString :: BiTree PhraSyn0 -> String
 biTreePhraSyn0ToString Empty = "()"
 biTreePhraSyn0ToString (Node r lst rst) = "(" ++ phraSyn0ToString r ++ "," ++ biTreePhraSyn0ToString lst ++ "," ++ biTreePhraSyn0ToString rst ++ ")"
 
+biTreePhraSyn0seToString :: BiTree PhraSyn0se -> String
+biTreePhraSyn0seToString Empty = "()"
+biTreePhraSyn0seToString (Node r lst rst) = "(" ++ phraSyn0seToString r ++ "," ++ biTreePhraSyn0seToString lst ++ "," ++ biTreePhraSyn0seToString rst ++ ")"
+
 biTreePhraSyn1ToString :: BiTree PhraSyn1 -> String
 biTreePhraSyn1ToString Empty = "()"
 biTreePhraSyn1ToString (Node r lst rst) = "(" ++ phraSyn1ToString r ++ "," ++ biTreePhraSyn1ToString lst ++ "," ++ biTreePhraSyn1ToString rst ++ ")"
@@ -1171,6 +1275,9 @@ biTreePhraSyn2RulesToString (biTreePhraSyn, rules) = "(" ++ biTreePhraSynToStrin
 
 biTreePhraSyn02RulesToString :: (BiTree PhraSyn0,[Rule]) -> String
 biTreePhraSyn02RulesToString (biTreePhraSyn0, rules) = "(" ++ biTreePhraSyn0ToString biTreePhraSyn0 ++ "," ++ show rules ++ ")"
+
+biTreePhraSyn0se2RulesToString :: (BiTree PhraSyn0se,[Rule]) -> String
+biTreePhraSyn0se2RulesToString (biTreePhraSyn0se, rules) = "(" ++ biTreePhraSyn0seToString biTreePhraSyn0se ++ "," ++ show rules ++ ")"
 
 biTreePhraSyn12RulesToString :: (BiTree PhraSyn1,[Rule]) -> String
 biTreePhraSyn12RulesToString (biTreePhraSyn1, rules) = "(" ++ biTreePhraSyn1ToString biTreePhraSyn1 ++ "," ++ show rules ++ ")"
@@ -1186,6 +1293,12 @@ stringToPhraSyn0s2Rules str = (map readPhraSyn0FromStr phrasyn0_strs, map (\x ->
     where
     (phrasyn0s_str, rules_str) = stringToTuple str                                       -- (String, String)
     (phrasyn0_strs, rule_strs) = (stringToList phrasyn0s_str, stringToList rules_str)    -- ([String], [String])
+
+stringToPhraSyn0ses2Rules :: String -> ([PhraSyn0se],[Rule])
+stringToPhraSyn0ses2Rules str = (map readPhraSyn0seFromStr phrasyn0se_strs, map (\x -> read x :: Rule) rule_strs)
+    where
+    (phrasyn0ses_str, rules_str) = stringToTuple str                                         -- (String, String)
+    (phrasyn0se_strs, rule_strs) = (stringToList phrasyn0ses_str, stringToList rules_str)    -- ([String], [String])
 
 stringToPhraSyn1s2Rules :: String -> ([PhraSyn1],[Rule])
 stringToPhraSyn1s2Rules str = (map readPhraSyn1FromStr phrasyn1_strs, map (\x -> read x :: Rule) rule_strs)
@@ -1205,6 +1318,12 @@ stringToBiTreePhraSyn0 str = (Node (readPhraSyn0FromStr rStr) (stringToBiTreePhr
     where
     (rStr, lstStr, rstStr) = stringToTriple str
 
+stringToBiTreePhraSyn0se :: String -> BiTree PhraSyn0se
+stringToBiTreePhraSyn0se "()" = Empty
+stringToBiTreePhraSyn0se str = (Node (readPhraSyn0seFromStr rStr) (stringToBiTreePhraSyn0se lstStr) (stringToBiTreePhraSyn0se rstStr))
+    where
+    (rStr, lstStr, rstStr) = stringToTriple str
+
 stringToBiTreePhraSyn1 :: String -> BiTree PhraSyn1
 stringToBiTreePhraSyn1 "()" = Empty
 stringToBiTreePhraSyn1 str = (Node (readPhraSyn1FromStr rStr) (stringToBiTreePhraSyn1 lstStr) (stringToBiTreePhraSyn1 rstStr))
@@ -1220,6 +1339,11 @@ stringToBiTreePhraSyn02Rules :: String -> (BiTree PhraSyn0, [Rule])
 stringToBiTreePhraSyn02Rules str = (stringToBiTreePhraSyn0 biTreePhraSyn0_str, map (\x -> read x :: Rule) (stringToList rules_str))
     where
     (biTreePhraSyn0_str, rules_str) = stringToTuple str                          -- (String, String)
+
+stringToBiTreePhraSyn0se2Rules :: String -> (BiTree PhraSyn0se, [Rule])
+stringToBiTreePhraSyn0se2Rules str = (stringToBiTreePhraSyn0se biTreePhraSyn0se_str, map (\x -> read x :: Rule) (stringToList rules_str))
+    where
+    (biTreePhraSyn0se_str, rules_str) = stringToTuple str                          -- (String, String)
 
 stringToBiTreePhraSyn12Rules :: String -> (BiTree PhraSyn1, [Rule])
 stringToBiTreePhraSyn12Rules str = (stringToBiTreePhraSyn1 biTreePhraSyn1_str, map (\x -> read x :: Rule) (stringToList rules_str))

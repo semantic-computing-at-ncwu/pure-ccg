@@ -100,8 +100,11 @@ login n = do
 -- Check whether current user is intellectual property creator (IPC) of the row indicated by serial_num.
 checkIpc :: SentIdx -> String -> IO Bool
 checkIpc sn username = do
+    confInfo <- readFile "Configuration"
+    let tree_target = getConfProperty "tree_target" confInfo
+        sqlstat = DS.fromString $ "select ipc from " ++ tree_target ++ " where serial_num = ? "
     conn <- getConn
-    stmt <- prepareStmt conn "select ipc from corpus where serial_num = ? "
+    stmt <- prepareStmt conn sqlstat
     (defs, is) <- queryStmt conn stmt [toMySQLInt32 sn]
     row <- S.read is
     let row' = case row of
@@ -155,7 +158,7 @@ interpreter username = do
       then doQuit
       else do
              case line of
-               "?" -> putStr ""                           -- Do nothing
+               "?" -> pure ()                           -- Do nothing
                "1" -> doGetRawSentForASent username
                "2" -> doCopyRawSentForASent username
                "3" -> doGetRawSent2ForASent username
@@ -306,7 +309,7 @@ doParseSent username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "1" -> doParseSentByHumanMind username
                "2" -> doParseSentByScript username
                "3" -> doParseSentByStruGene username
@@ -367,27 +370,27 @@ doParseSentByHumanMind username = do
 
 {- 8_2. According to the previously created script, parse the sentence indicated by serial_num.
  - The parsing result will be compared with the result created manually, and then dropped away.
+ - Now, category disambiguation samples are stored in treebank indicated by 'tree_target'.
+ - The treebank includes word context represented by CL combinators.
  -}
 doParseSentByScript :: String -> IO ()
 doParseSentByScript username = do
     confInfo <- readFile "Configuration"
-    let script_source = getConfProperty "script_source" confInfo                     -- Script source
+    let sent_source = getConfProperty "sent_source" confInfo                         -- Sentence source
+        script_source = getConfProperty "script_source" confInfo                     -- Script source
         tree_source = getConfProperty "tree_source" confInfo                         -- Tree source
         tree_target = getConfProperty "tree_target" confInfo                         -- Tree target
         syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
-        cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
         tree_target_update_switch = getConfProperty "tree_target_update_switch" confInfo
         syntax_ambig_resol_sample_update_switch = getConfProperty "syntax_ambig_resol_sample_update_switch" confInfo
-        category_ambig_resol_sample_update_switch = getConfProperty "category_ambig_resol_sample_update_switch" confInfo
 
+    putStrLn $ " sent_source: " ++ sent_source
     putStrLn $ " script_source: " ++ script_source
     putStrLn $ " tree_source: " ++ tree_source
     putStrLn $ " tree_target: " ++ tree_target
     putStrLn $ " syntax_ambig_resol_model: " ++ syntax_ambig_resol_model
-    putStrLn $ " cate_ambig_resol_model: " ++ cate_ambig_resol_model
     putStrLn $ " tree_target_update_switch: " ++ tree_target_update_switch
     putStrLn $ " syntax_ambig_resol_sample_update_switch: " ++ syntax_ambig_resol_sample_update_switch
-    putStrLn $ " category_ambig_resol_sample_update_switch: " ++ category_ambig_resol_sample_update_switch
 
     contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
     if contOrNot == "c"
@@ -422,7 +425,7 @@ doParseSentByStruGene username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "1" -> doParseSentByHighestSimilarity username
              doParseSentByStruGene username                    -- Rear recursion
 
@@ -441,7 +444,7 @@ doParseSentByHighestSimilarity username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "1" -> parseSentByStruGeneFromConf "StruGeneIdentity"   -- Identity similarity
                "2" -> parseSentByStruGeneFromConf "StruGeneEmbedded"   -- Embedded similarity
              doParseSentByHighestSimilarity username           -- Rear recursion
@@ -508,14 +511,14 @@ doStatisticalAnalysis username = do
     putStrLn " 2 -> Count in syntax_ambig_resol_model samples"
     putStrLn " 3 -> Search in treebank"
     putStrLn " 4 -> Evaluate an experimental treebank"
-    putStrLn " 5 -> Count in cate_ambig_resol_model samples"
+    putStrLn " 5 -> Count in cate_ambig_resol_source samples"
     putStrLn " 0 -> Go back to the upper layer"
     line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "1" -> doCountInTreebank username
                "2" -> doCountInStruGene username
                "3" -> doSearchInTreebank username
@@ -558,7 +561,7 @@ doCountInTreebank username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "t1" -> doCountInTree username 1
                "t2" -> doCountInTree username 2
                "t3" -> doCountInTree username 3
@@ -651,7 +654,7 @@ doCountInStruGene username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "1" -> doCountInStruGene' username 1
                "2" -> doCountInStruGene' username 2
                "3" -> doCountInStruGene' username 3
@@ -706,7 +709,7 @@ doSearchInTreebank username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "t1" -> doSearchInTree username 1
                "t2" -> doSearchInTree username 2
                "t3" -> doSearchInTree username 3
@@ -772,14 +775,15 @@ doCountInSLRBank username = do
     putStrLn " 5 -> Get similarity degree between every pair of ContextOfCC3 values"
     putStrLn " 6 -> Get similarity degree between every pair of ContextOfCC4 values"
     putStrLn " 7 -> Get average category-conversions similarity between every SLR sample and its Stub-closest SLR sample"
+    putStrLn " 8 -> Get the number of occurrences of each category conversion set in SLR samples"
     putStrLn " 0 -> Go back to the upper layer."
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "1" -> doCountInSLRBank' username 1
                "2" -> doCountInSLRBank' username 2
                "3" -> doCountInSLRBank' username 3
@@ -787,13 +791,15 @@ doCountInSLRBank username = do
                "5" -> doCountInSLRBank' username 5
                "6" -> doCountInSLRBank' username 6
                "7" -> doCountInSLRBank' username 7
+               "8" -> doCountInSLRBank' username 8
              doCountInSLRBank username                         -- Rear recursion
 
--- A5_1/2/3/4/5/6/7. Display statistical results from a certain SLR sample bank, such as table 'slr_corpus_202509'.
+-- A5_1/2/3/4/5/6/7/8. Display statistical results from a certain SLR sample bank, such as table 'slr_corpus_202509'.
 doCountInSLRBank' :: String -> Int -> IO ()
 doCountInSLRBank' username funcIndex = do
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
-    let cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
+    let cate_ambig_resol_source = getConfProperty "cate_ambig_resol_source" confInfo
+    let cars_field = getConfProperty "cars_field" confInfo
     let howToGetGramAttrSim = getConfProperty "howToGetGramAttrSim" confInfo
     let phrasyn_sim_tbl = getConfProperty "phrasyn_sim_tbl" confInfo
     let phrasyn0_sim_tbl = getConfProperty "phrasyn0_sim_tbl" confInfo
@@ -807,7 +813,7 @@ doCountInSLRBank' username funcIndex = do
     let ccc_sim_tbl = getConfProperty "ccc_sim_tbl" confInfo
     let decay_subtree_kernel = getConfProperty "decay_subtree_kernel" confInfo
 
-    putStrLn $ " cate_ambig_resol_model: " ++ cate_ambig_resol_model     -- Display the ambiguity resolution model
+    putStrLn $ " cate_ambig_resol_source: " ++ cate_ambig_resol_source     -- Display the ambiguity resolution model
     if elem funcIndex [1,2]
       then do
         putStrLn $ " phra_gram_dist_algo: " ++ phra_gram_dist_algo
@@ -815,36 +821,37 @@ doCountInSLRBank' username funcIndex = do
         putStrLn $ " type_sim_tbl: " ++ type_sim_tbl
         putStrLn $ " tag_sim_tbl: " ++ tag_sim_tbl
         putStrLn $ " stru_sim_tbl: " ++ stru_sim_tbl
-      else putStr ""
+      else pure ()
     if elem funcIndex [1]
       then putStrLn $ " span_sim_tbl: " ++ span_sim_tbl
-      else putStr ""
+      else pure ()
     if elem funcIndex [1,3,5]
       then putStrLn $ " phrasyn_sim_tbl: " ++ phrasyn_sim_tbl
-      else putStr ""
+      else pure ()
     if elem funcIndex [2,4,6]
       then putStrLn $ " phrasyn0_sim_tbl: " ++ phrasyn0_sim_tbl
-      else putStr ""
+      else pure ()
     if elem funcIndex [3,4,5,6]
       then do
         putStrLn $ " store_ccc_sim: " ++ store_ccc_sim
         putStrLn $ " ccc_sim_rows_chunk: " ++ ccc_sim_rows_chunk
         putStrLn $ " ccc_sim_tbl: " ++ ccc_sim_tbl
-      else putStr ""
+      else pure ()
     if elem funcIndex [5,6]
       then do
         putStrLn $ " decay_subtree_kernel: " ++ decay_subtree_kernel
-      else putStr ""
-    if elem funcIndex [7]
+      else pure ()
+    if elem funcIndex [7,8]
       then do
         putStrLn $ " ccc_sim_tbl: " ++ ccc_sim_tbl
-      else putStr ""
+        putStrLn $ " cars_field: " ++ cars_field
+      else pure ()
 
-    startIdx <- getNumUntil "Please input index number of start cate_ambig_resol_model sample [Return for 1]: " [0 ..]
-    endIdx <- getNumUntil "Please input index number of end cate_ambig_resol_model sample [Return for last]: " [0 ..]
+    startIdx <- getNumUntil "Please input index number of start cate_ambig_resol_source sample [Return for 1]: " [0 ..]
+    endIdx <- getNumUntil "Please input index number of end cate_ambig_resol_source sample [Return for last]: " [0 ..]
 
     conn <- getConn
-    let sqlstat = DS.fromString $ "SELECT count(*) from " ++ cate_ambig_resol_model
+    let sqlstat = DS.fromString $ "SELECT count(*) from " ++ cate_ambig_resol_source
     (defs, is) <- query_ conn sqlstat
     rows <- readStreamByInt64 [] is
 
@@ -859,7 +866,7 @@ doCountInSLRBank' username funcIndex = do
     contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
     if contOrNot == "n"
       then putStrLn "doCountInSLRBank: cancelled."
-      else countInSLRBank cate_ambig_resol_model startIdx' endIdx' funcIndex
+      else countInSLRBank cate_ambig_resol_source startIdx' endIdx' funcIndex
 
 -- B. Do experiments.
 doExperiments :: String -> IO ()
@@ -890,7 +897,7 @@ doExperiments username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "1" -> doParseSentWithAllLexRules username
                "2" -> doTestSim1HappenBetweenOneStruGeneSampleAndItself username
                "3" -> doTestScriptIdentity username
@@ -1040,7 +1047,7 @@ doTestIsStrOfSimpleType username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
         case line of
-          "?" -> putStr ""                                     -- Do nothing
+          "?" -> pure ()                                     -- Do nothing
           "1" -> do
             putStr "Please input a string: "
             inStr <- getLine
@@ -1063,7 +1070,7 @@ doTestGetCanonicalStrOfSimpleType username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
         case line of
-          "?" -> putStr ""                                     -- Do nothing
+          "?" -> pure ()                                     -- Do nothing
           "1" -> do
             putStr "Please input a string: "
             inStr <- getLine
@@ -1119,7 +1126,7 @@ doTestGetLTermFromSimpleType username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
         case line of
-          "?" -> putStr ""                                     -- Do nothing
+          "?" -> pure ()                                     -- Do nothing
           "1" -> do
             putStr "Please input a string of a simple type (brackets may be omitted): "
             inStr <- getLine
@@ -1150,7 +1157,7 @@ doTestGetCLTermFromLambdaTermAndOtherWhere username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
         case line of
-          "?" -> putStr ""                                     -- Do nothing
+          "?" -> pure ()                                     -- Do nothing
           "1" -> do
             confInfo <- readFile "Configuration"
             let omitClauseK = read (getConfProperty "omitClauseK" confInfo) :: Bool
@@ -1261,7 +1268,7 @@ doTestCate2Vec username = do
         cateVecMap <- cate2Vec            -- Map Category (Vector Double)
         let npVec = LA.toList $ fromMaybe (LA.vector []) $ Map.lookup npCate cateVecMap
         putStrLn $ "Embedding vector of category 'np': " ++ listToString (map (printf "%.4f" :: Double -> String) npVec)
-      else putStr ""
+      else pure ()
 
 {- B.D Test the function tag2Vec in Module Statistics.
  - 'Desig' has no embedding vector, because no similarity between 'Desig' and every other Tag value exists.
@@ -1286,7 +1293,7 @@ doTestTag2Vec username = do
         putStrLn $ "Embedding vector of grammatic rule 'N/v-<': " ++ listToString (map (printf "%.4f" :: Double -> String) v4)
         putStrLn $ "Embedding vector of grammatic rule 'V/n-O/v->': " ++ listToString (map (printf "%.4f" :: Double -> String) v5)
         putStrLn $ "Embedding vector of grammatic rule 'desig': " ++ listToString (map (printf "%.4f" :: Double -> String) desigVec)
-      else putStr ""
+      else pure ()
 
 {- B.E Test the function stru2Vec in Module Statistics.
  - 'DE' has no embedding vector, because no similarity between 'DE' and every other PhraStru value exists.
@@ -1305,7 +1312,7 @@ doTestStru2Vec username = do
         putStrLn $ "Embedding vector of phrasal structure 'AHn': " ++ listToString (map (printf "%.4f" :: Double -> String) aHnVec)
         putStrLn $ "Embedding vector of phrasal structure 'OE': " ++ listToString (map (printf "%.4f" :: Double -> String) oEVec)
         putStrLn $ "Embedding vector of phrasal structure 'DE': " ++ listToString (map (printf "%.4f" :: Double -> String) dEVec)
-      else putStr ""
+      else pure ()
 
 {- B.F Test the binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM.
  -}
@@ -1318,7 +1325,7 @@ doTestBiTreeLSTM username = do
     answer <- getLineUntil prompt ["y","n"] True
     if answer == "y"
       then testPipeline
-      else putStr ""
+      else pure ()
 
 {- B.10 Test the building of sample set in Module BiTreeLSTM.
  -}
@@ -1350,7 +1357,7 @@ doTestBuildSampleSetInBiTreeLSTM username = do
       then do
         sampleSet <- buildSampleSet dim_cate dim_tag dim_stru
         putStrLn $ "Size of sample set = " ++ show (length sampleSet)
-      else putStr ""
+      else pure ()
 
 {- B.11 Training Binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM, then testing the model.
  -}
@@ -1545,7 +1552,7 @@ doEvalSyntaxDisambigBySampleWithMaxSim username = do
         putStrLn $ "  macro_avg_precision: " ++ (printf "%.4f" macro_avg_precision) ++ ", macro_avg_recall: " ++ (printf "%.4f" macro_avg_recall) ++ ", macro_avg_f1Score: " ++ (printf "%.4f" macro_avg_f1Score)
         putStrLn $ "  weighted_avg_precision: " ++ (printf "%.4f" weighted_avg_precision) ++ ", weighted_avg_recall: " ++ (printf "%.4f" weighted_avg_recall) ++ ", weighted_avg_f1Score: " ++ (printf "%.4f" weighted_avg_f1Score)
 
-      else putStr ""           -- Command was cancelled.
+      else pure ()           -- Command was cancelled.
 
 -- C. Various maintenance tools.
 doMaintenance :: String -> IO ()
@@ -1572,7 +1579,7 @@ doMaintenance username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "1" -> doRearrangeIdinCertainTable username
                "2" -> doSortPhraseInTreeAndScript username
                "3" -> doAddHX2TreeAndScript username
@@ -1884,7 +1891,7 @@ doClustering username = do
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
              case line of
-               "?" -> putStr ""                                -- Do nothing
+               "?" -> pure ()                                -- Do nothing
                "1" -> doTestfunctionOfMaxminPoint
 {-       "2" -> do
  -                doTestfunctionOfUpdateCentre4ACluster
@@ -1896,20 +1903,20 @@ doClustering username = do
                "7" -> clusteringAnalysis 7
                "8" -> clusteringAnalysis 8
                "9" -> clusteringAnalysis 9
-               "A" -> clusteringAnalysis 10
-               "B" -> clusteringAnalysis 11
-               "C" -> clusteringAnalysis 12
-               "D" -> clusteringAnalysis 13
-               "E" -> clusteringAnalysis 14
+               "A" -> clusteringAnalysis 0xA
+               "B" -> clusteringAnalysis 0xB
+               "C" -> clusteringAnalysis 0xC
+               "D" -> clusteringAnalysis 0xD
+               "E" -> clusteringAnalysis 0xE
                "F" -> kMedoidsClusteringOnStruGene2Samples
                "10" -> batchKMedoidsOnStruGene2Samples
                "11" -> doCalProbOfClosestSampleHasSamePrior
-               "12" -> clusteringAnalysis 18
-               "13" -> clusteringAnalysis 19
-               "14" -> clusteringAnalysis 20
-               "15" -> clusteringAnalysis 21
-               "16" -> clusteringAnalysis 22
-               "17" -> clusteringAnalysis 23
+               "12" -> clusteringAnalysis 0x12
+               "13" -> clusteringAnalysis 0x13
+               "14" -> clusteringAnalysis 0x14
+               "15" -> clusteringAnalysis 0x15
+               "16" -> clusteringAnalysis 0x16
+               "17" -> clusteringAnalysis 0x17
              doClustering username                             -- Rear recursion
 
 -- D_1.测试求初始点函数

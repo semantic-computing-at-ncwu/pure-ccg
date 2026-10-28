@@ -1217,7 +1217,7 @@ rollbackStruGene clauTag nPCs (op:ops) = do
 parseSentsByScript :: SentIdx -> SentIdx -> IO ()
 parseSentsByScript startSn endSn = do
     putStrLn $ "Sentence No." ++ show startSn ++ " start to create SLR samples."
-    let startSn' = startSn +1
+    let startSn' = startSn + 1
     getSentFromDB startSn >>= getSent >>= parseSentByScript startSn >>= \cOrS ->
       if cOrS
         then do                  -- Continue parsing
@@ -1284,7 +1284,7 @@ parseSentByScript sn cs = do
         if hasCTPSample
           then removeClauTagPriorFromSynAmbiResol sn 1 clauNum     -- Remove all samples of this sentence in syntax ambiguity resolution database.
           else putStrLn "parseSentByScript: No syntax ambiguity resolution sample."
-      else putStr ""                                               -- Do NOT update sample base
+      else pure ()                                                 -- Do NOT update sample base
 
     finFlagAndSLRAndTree <- parseSentByScript' sn cs script'
     if (fst5 finFlagAndSLRAndTree)

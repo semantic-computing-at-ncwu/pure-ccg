@@ -87,11 +87,10 @@ syntax_ambig_resol_model:stru_gene3a0s_clcg_20260817
 # T3a0s-Q-J-WANG: Type 3a0s overlapping tree without LeftExtend and RightExtend, besides using PhraSyn0 and logic semantics
 max_sim_contextofsg_algo:T3a0-H-DONG
 
-# Category ambiguity resolution model also is the name of MySQL table storing the samples of that model.
+# Category ambiguity resolution model
 # Possible values of this property:
-#   - slr_corpus_202509
-#   - slr_corpus_20260129
-cate_ambig_resol_model:slr_corpus_20260817
+# SLR :: ([PhraCate], [Rule])
+cate_ambig_resol_model:SLR
 
 # Switch of updating parsing tree, syntax or category ambiguity resolution samples in database.
 # For grammar inconsistancy, parsing by scripts sometimes includes manually ambiguity resolution, using new category conversion rules or syntax rules.
@@ -99,7 +98,8 @@ cate_ambig_resol_model:slr_corpus_20260817
 # So, parsing by scripts might change syntax or category ambiguity resolution samples coming from a same sentence.
 # When NOT hope to update syntax or category ambiguity resolution samples in database, set this switch as Off.
 # Now, category ambiguity resolution model SLR samples are stored with treebank created by parsing with scripts.
-tree_target_update_switch:Off
+# Now, SLR samples are stored in treebank, requiring that 'tree_target_update_switch' is 'On'.
+tree_target_update_switch:On
 syntax_ambig_resol_sample_update_switch:Off
 category_ambig_resol_sample_update_switch:Off
 
@@ -123,11 +123,16 @@ syntax_resol_sample_endsn:350
 prune_algo:NoDemandPhrase
 # prune_algo:FinalTree
 
-# 'SLR' is one kind of category conversion ambiguity resolution model.
-# In 'SLR', one [([PhraCate], [Rule])] per clause, one [[([PhraCate], [Rule])]] per sentence.
-# treebank_including_SLR is a table storing SLR samples, in which every record has (serial_num, tree, script, SLR, tagClause).
-cate_ambig_resol_source:treebank_including_SLR
-cate_ambig_resol_target:treebank_including_SLR
+# MySQL table for storing category disambiguation samples.
+# Possible values:
+#   - treebank_SLR_xxxx, in which every record has (serial_num, tree, script, SLR, tagClause).
+#   - treebank_by_script_with_semantics_not_reductive_xxxx, defined as (serial_num, tree, script, seman_comb, word_context,word_context_reduct, intension_juxtaposition, tree_check, SLR, tagClause)
+#   - slr_xxx, defined as (id, transTag, phrasyn_list_rules, phrasyn0_list_rules, bitree_phrasyn_rules, bitree_phrasyn0_rules, bitree_phrasyn0se_rules).
+cate_ambig_resol_source:slr_corpus_pccg_manual_20261027
+cate_ambig_resol_target:treebank_SLR_clcg_20261023
+
+# Field name of SLR sample in MySQL table for storing category disambiguation samples.
+cars_field:bitree_phrasyn0se_rules
 
 # Range of serial_nums of the used category ambiguity resolution model samples.
 cate_resol_sample_startsn:1
@@ -263,10 +268,13 @@ mean_sim_trace_file:mean_sim_trace.csv
 clusters_trace_file:clusters_trace.csv
 
 # MySQL Table storing raw SLR samples
-slr_raw_corpus:treebank_including_SLR_for_creating_stru_gene3_202508
+#  - slr_raw_corpus:treebank_including_SLR_for_creating_stru_gene3a_202508
+slr_raw_corpus:treebank_by_script_with_semantics_not_reductive_20260817
 
 # MySQL Table storing ripe SLR samples
-slr_ripe_corpus:slr_corpus_202509
+#  - slr_corpus_202509
+#  - slr_corpus_pccg_manual_20261027
+slr_ripe_corpus:slr_corpus_pccg_manual_20261027
 
 # Whether omit the clause (k) in Schonfinkel's variable elimination algorithm.
 omitClauseK:False
@@ -292,8 +300,8 @@ dim_stru:16
 # Suppose dim_cate_hide_layer = dim_word_hide_layer.
 dim_cate_hide_layer:128
 dim_word_hide_layer:128
-dim_word_mlpout:64
-dim_cate_mlpout:64
+dim_cate_mlpout:32
+dim_word_mlpout:48
 
 # Dimensions of projection layers and hidden layers.
 dim_proj:64

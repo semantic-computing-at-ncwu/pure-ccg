@@ -1390,31 +1390,31 @@ countInSLRBank cate_ambig_resol_model startIdx endIdx funcIndex = do
          putStrLn "All to all similarity degree calculations begin ..."
          t0 <- getCurrentTime                -- UTCTime
 
-         sIdx2ContextOfCC2List <- getSIdx2ContextOfCC2Base startIdx endIdx          -- [(SIdx, ContextOfCC2)]
+         sIdx2ContextOfCC2List <- getSIdx2ContextOfCC2Base startIdx endIdx      -- [(SIdx, ContextOfCC2)]
          let sIdx2ContextOfCC2PairList = [(u, v) | u <- sIdx2ContextOfCC2List, v <- sIdx2ContextOfCC2List, u <= v]
                                              -- [((SIdx, ContextOfCC2), (SIdx, ContextOfCC2))], where commutative unique and not descending.
          putStrLn $ "Num. of SIdx2ContextOfCC2 pairs = " ++ show (length sIdx2ContextOfCC2PairList)
 
          phraSyn0Pair2SimList <- readStaticPhraSyn0Pair2Sim
-         let phraSyn0Pair2SimMap = Map.fromList phraSyn0Pair2SimList                -- Map (PhraSyn0, PhraSyn0) SimDeg
+         let phraSyn0Pair2SimMap = Map.fromList phraSyn0Pair2SimList            -- Map (PhraSyn0, PhraSyn0) SimDeg
          putStrLn $ "Map (PhraSyn0, PhraSyn0) SimDeg was created. Num. of PhraSyn0 pairs = " ++ show (length phraSyn0Pair2SimList)
 
          let sIdxPair2SimList = map (\((idx1, ccc1), (idx2, ccc2)) ->
                                       (idx1, idx2, getPhraSyn0SetSim ccc1 ccc2 phraSyn0Pair2SimMap)
-                                    ) sIdx2ContextOfCC2PairList                     -- [(SIdx, SIdx, SimDeg)]
+                                    ) sIdx2ContextOfCC2PairList                 -- [(SIdx, SIdx, SimDeg)]
 
          let rowNum = read ccc_sim_rows_chunk :: Int
-         let sIdxPair2SimLists = chunk rowNum sIdxPair2SimList                      -- [[(SIdx, SIdx, SimDeg)]]
+         let sIdxPair2SimLists = chunk rowNum sIdxPair2SimList                  -- [[(SIdx, SIdx, SimDeg)]]
          case store_ccc_sim of
            "True" -> do
              putStrLn $ "  Last inserted ID, (SIdx, SIdx) and time spent: "
              forM_ sIdxPair2SimLists $ \sIdxPair2SimSubList -> do
-               t1 <- getCurrentTime                                                 -- UTCTime
+               t1 <- getCurrentTime                                             -- UTCTime
                let sqlstat = DS.fromString $ "INSERT INTO " ++ ccc_sim_tbl ++ " SET stub1idx = ?, stub2idx = ?, sim = ?"
                let vList = map (\(idx1, idx2, sim) -> [toMySQLInt16U idx1, toMySQLInt16U idx2, toMySQLFloat (double2Float sim)]) sIdxPair2SimSubList  -- [[MySQLValue]]
                oks <- executeMany conn sqlstat vList
                let lastInsertID = getOkLastInsertID (last oks)
-               t2 <- getCurrentTime                                                 -- UTCTime
+               t2 <- getCurrentTime                                             -- UTCTime
                putStrLn $ "  " ++ show lastInsertID ++ " \t" ++ show ((fst3 . last) sIdxPair2SimSubList, (snd3 . last) sIdxPair2SimSubList) ++ " \t" ++ show (diffUTCTime t2 t1)
            "False" -> putStrLn "clusteringAnalysis: No database operation."
          t3 <- getCurrentTime                                                   -- UTCTime
@@ -1558,6 +1558,37 @@ countInSLRBank cate_ambig_resol_model startIdx endIdx funcIndex = do
          putStrLn $ "\nTotal calculating time: " ++ show (diffUTCTime t3 t0)
          close conn
        else putStr ""
+
+    {- 8. In a given SLR sample set, calculte the number of occurrences of each category conversion set, the number of occurrences of each size of category-conversion set,
+     - and the number of occurrences of each category conversion.
+     -}
+    if funcIndex == 8
+       then do
+         putStrLn "Start to calculate ..."
+         t0 <- getCurrentTime                -- UTCTime
+
+         srList <- readSIdxRulesFromDB startIdx endIdx                          -- [SIdxRules], namely [(SIdx, [Rule])]
+         putStrLn $ "[INFO] " ++ show (endIdx - startIdx + 1) ++ " (SIdx, [Rule]) samples are read into memory."
+
+         let ruleSetList = map snd srList                                       -- [[Rule]]
+             ruleSetCount = keyToMap ruleSetList Map.empty                      -- Map Int Int
+         putStrLn $ "([Rule], NumOfOccur): " ++ show (Map.toList ruleSetCount)
+         putStrLn $ "Num. of different rule sets = " ++ show (Map.size ruleSetCount)
+
+         let sizeList = map (length . snd) srList                               -- [Int]
+             sizeCount = keyToMap sizeList Map.empty                            -- Map Int Int, Num. of different sizes.
+             sizeCountAscList = Map.toAscList sizeCount                         -- [(size, count)]
+             sizeIdxList = map fst sizeCountAscList
+             countList = map snd sizeCountAscList
+             sizeCountTotal = foldl (+) 0 countList
+             ratioList = map (\x -> (fromIntegral x :: Float) / (fromIntegral sizeCountTotal :: Float)) countList
+             sizeRatioList = zip sizeIdxList ratioList
+         putStrLn $ "(Size, NumOfOccur): " ++ show sizeCountAscList
+         putStrLn $ "Occrrence ratios of different sizes: " ++ show (formatMapListWithFloatValue sizeRatioList 4)
+
+         t1 <- getCurrentTime                                                   -- UTCTime
+         putStrLn $ "\nTotal calculating time: " ++ show (diffUTCTime t1 t0)
+       else pure ()
 
 {- Get representations in memory of parsing results of sentences.
  - <sentsResult> ::= [<sentResult>], a <sentResult> is the parsing result for a sentence.
@@ -1846,9 +1877,9 @@ toSentClauAbanNRPhraNumList (sent:sents) = (map length sentAbanNRPhra) : toSentC
     sentAbanPhra' = map concat sentAbanPhra                               -- [BanPCs], one phrasal list per clause
     sentAbanNRPhra = map (\clauAbanPhra -> [x | x <- clauAbanPhra, (psOfCate x)!!0 == "NR"]) sentAbanPhra'   -- Every phrase has only one 'ctspa'.
 
-{- Count the frequencies of various keys, and store them in Map <String> <Int>.
+{- Count the frequencies of various keys, and store them in Map <type> <Int>, where 'type' is the type of keys.
  -}
-keyToMap :: [String] -> Map String Int -> Map String Int
+keyToMap :: Ord a => [a] -> Map a Int -> Map a Int
 keyToMap [] m = m
 keyToMap (s:ss) m = keyToMap ss (Map.insert s sNum m)
     where

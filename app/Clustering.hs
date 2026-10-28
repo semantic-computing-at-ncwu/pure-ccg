@@ -876,9 +876,12 @@ readStreamBySIdxRules es is = do
 readSIdxRulesFromDB :: SIdx -> SIdx -> IO [SIdxRules]
 readSIdxRulesFromDB startId endId = do
   confInfo <- readFile "Configuration"
-  let cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
+  let cate_ambig_resol_source = getConfProperty "cate_ambig_resol_source" confInfo
+      cars_field = getConfProperty "cars_field" confInfo
   conn <- getConn
-  let sqlstat = DS.fromString $ "SELECT id, phrasyn_list_rules FROM " ++ cate_ambig_resol_model ++ " where id >= " ++ show startId ++ " and id <= " ++ show endId
+  let sqlstat = case cate_ambig_resol_source of
+                  x | isPrefixOf "slr_" x -> DS.fromString $ "SELECT id, " ++ cars_field ++ " from " ++ cate_ambig_resol_source ++ " where id >= " ++ show startId ++ " and id <= " ++ show endId
+
   stmt <- prepareStmt conn sqlstat
   (defs, is) <- queryStmt conn stmt []
   sps <- readStreamBySIdxRules [] is                -- [SIdxRules]
@@ -1517,11 +1520,11 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
        else putStr ""
 
-{- 10(A). Get similarity degrees between any two contexts of StruGene samples by Singular Value Decomposition.
+{- 0xA. Get similarity degrees between any two contexts of StruGene samples by Singular Value Decomposition.
  - ContextOfSG :: (LeftExtend, LeftOver, RightOver, RightExtend, OverType)
  - ContextOfOT :: (LeftExtend, LeftOver, RightOver, RightExtend)
  -}
-    if funcIndex == 10
+    if funcIndex == 0xA
        then do
          confInfo <- readFile "Configuration"
          let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
@@ -1586,11 +1589,11 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
        else putStr ""
 
-{- 11(B). Get similarity degrees between any two contexts of StruGene samples.
+{- 0xB. Get similarity degrees between any two contexts of StruGene samples.
  - ContextOfSG :: (LeftExtend, LeftOver, RightOver, RightExtend, OverType)
  - ContextOfOT :: (LeftExtend, LeftOver, RightOver, RightExtend)
  -}
-    if funcIndex == 11
+    if funcIndex == 0xB
        then do
          confInfo <- readFile "Configuration"
          let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
@@ -1637,12 +1640,12 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
        else putStr ""
 
-{- 12(C). Among StruGene samples, calculate similarity degrees from one to all contexts.
+{- 0xC. Among StruGene samples, calculate similarity degrees from one to all contexts.
  - ContextOfSG :: (LeftExtend, LeftOver, RightOver, RightExtend, OverType)
  - ContextOfSG3a0 :: (LeftOverTree0, RightOverTree0)
  - LeftOverTree0, RightOverTree0 :: BiTree PhraSyn0
  -}
-    if funcIndex == 12
+    if funcIndex == 0xC
        then do
          ct1 <- getCurrentTime                                                  -- Get current time
          confInfo <- readFile "Configuration"
@@ -1781,12 +1784,12 @@ clusteringAnalysis funcIndex = do
           else putStrLn "Operation was canceled."
         else putStr ""
 
-{- 13(D). Get similarity degrees between one ClauTagPrior context to every context of StruGene (or Strugene3a0) samples.
+{- 0xD. Get similarity degrees between one ClauTagPrior context to every context of StruGene (or Strugene3a0) samples.
  - ContextOfSG :: (LeftExtend, LeftOver, RightOver, RightExtend, OverType)
  - ContextOfSG3a0 :: (LeftOverTree0, RightOverTree0)
  - Input No.4 Sample , it is ([(((s\.np)/#(s\.np))/*np,"Desig","DE")],(np,">","AHn"),(s,"<","SP"),[],2)
  -}
-    if funcIndex == 13
+    if funcIndex == 0xD
        then do
          confInfo <- readFile "Configuration"
          let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
@@ -1926,10 +1929,10 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was cancelled."
        else putStr ""
 
-{- 14(E). Among StruGene samples, calculate similarity degree between every pair of contexts.
+{- 0xE. Among StruGene samples, calculate similarity degree between every pair of contexts.
  - ContextOfSG :: (LeftExtend, LeftOver, RightOver, RightExtend, OverType)
  -}
-    if funcIndex == 14
+    if funcIndex == 0xE
        then do
          confInfo <- readFile "Configuration"
          let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
@@ -1994,10 +1997,10 @@ clusteringAnalysis funcIndex = do
          close conn                                   -- Close MySQL connection.
        else putStr ""
 
-{- 18(12H). Among StruGene3a samples, calculate similarity degree between every pair of contexts.
+{- 0x12. Among StruGene3a samples, calculate similarity degree between every pair of contexts.
  - ContextOfSG3a :: (LeftOverTree, RightOverTree)
  -}
-    if funcIndex == 18
+    if funcIndex == 0x12
        then do
          confInfo <- readFile "Configuration"
          let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
@@ -2065,10 +2068,10 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
        else putStr ""
 
-{- 19(13H). Among StruGene3a0 samples, calculate similarity degree between every pair of contexts.
+{- 0x13. Among StruGene3a0 samples, calculate similarity degree between every pair of contexts.
  - ContextOfSG3a0 :: (LeftOverTree0, RightOverTree0)
  -}
-    if funcIndex == 19
+    if funcIndex == 0x13
        then do
          confInfo <- readFile "Configuration"
          let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
@@ -2134,15 +2137,15 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
        else putStr ""
 
-{- 20(14H). From SLR raw samples, get SLR ripe samples.
+{- 0x14. From SLR raw samples, get SLR ripe samples.
  - slr_raw_sample: [PhraCate] -> [Rule]
- - slr_ripe_sample: [PhraSyn] -> [Rule], [PhraSyn0] -> [Rule], BiTree PhraSyn -> [Rule], and BiTree PhraSyn0 -> [Rule]
+ - slr_ripe_sample: [PhraSyn] -> [Rule], [PhraSyn0] -> [Rule], BiTree PhraSyn -> [Rule], BiTree PhraSyn0 -> [Rule], and BiTree PhraSyn0se -> [Rule]
  - Every SLR sample includes a collection of phrasal cateories and categorial conversions to be adopted.
- - From these phrasal categories, the corresponding PhraSyn and PhraSyn0 values are extracted, and
+ - From these phrasal categories, the corresponding PhraSyn, PhraSyn0, and PhraSyn0se values are extracted, and
  - are used to form a forest of binary trees, and the later corresponds to a binary tree by left-child right-sibling algorithm.
  - Results are stored into MySQL Table named as the value of attribute "slr_ripe_corpus".
  -}
-    if funcIndex == 20
+    if funcIndex == 0x14
        then do
          confInfo <- readFile "Configuration"
          let slr_raw_corpus = getConfProperty "slr_raw_corpus" confInfo
@@ -2171,7 +2174,7 @@ clusteringAnalysis funcIndex = do
          contOrNot <- getLineUntil ("Continue or not [c/n]? (RETURN for 'n') ") ["c","n"] False
          if contOrNot == "c"
            then do
-             let sqlstat = DS.fromString $ "CREATE TABLE IF NOT EXISTS " ++ slr_ripe_corpus ++ " (id INT UNSIGNED PRIMARY KEY AUTO_INCREMENT, transTag varchar(12), phrasyn_list_rules MEDIUMTEXT, phrasyn0_list_rules MEDIUMTEXT, bitree_phrasyn_rules MEDIUMTEXT, bitree_phrasyn0_rules MEDIUMTEXT)"
+             let sqlstat = DS.fromString $ "CREATE TABLE IF NOT EXISTS " ++ slr_ripe_corpus ++ " (id INT UNSIGNED PRIMARY KEY AUTO_INCREMENT, transTag varchar(12), phrasyn_list_rules MEDIUMTEXT, phrasyn0_list_rules MEDIUMTEXT, bitree_phrasyn_rules MEDIUMTEXT, bitree_phrasyn0_rules MEDIUMTEXT, bitree_phrasyn0se_rules MEDIUMTEXT)"
              stmt <- prepareStmt conn sqlstat
              executeStmt conn stmt []
              closeStmt conn stmt
@@ -2186,38 +2189,42 @@ clusteringAnalysis funcIndex = do
 
              sLROfSentStrList <- readStreamByText [] is                         -- [String], here a string is a SLROfSent sample.
              let sLROfATransListListList = map stringToSentSLR sLROfSentStrList   -- [[[sLROfATrans]]]
-             let idxListListList = map (\sentSLR -> map (\clauSLR -> [1 .. length clauSLR]) sentSLR) sLROfATransListListList  -- [[[Int]]]
-             let sLROfATransList = (concat . concat) sLROfATransListListList    -- [sLROfATrans]
-             let idxList = (concat . concat) idxListListList                    -- [Int], namely [TransIdx]
-             let clauTagList = map fst sLROfATransList                          -- [(SentIdx, ClauIdx)]
-             let transTagList = map (\((sentIdx, clauIdx), transIdx) -> (sentIdx, clauIdx, transIdx)) $ zip clauTagList idxList  -- [(SentIdx,ClauIdx,TransIdx)]
-             let sLRList = map snd sLROfATransList                              -- [(Stub, [Rule])]
-             putStrLn $ " clusteringAnalysis Func. 20(K): Num. of SLR samples = " ++ show (length sLRList)
+                 idxListListList = map (\sentSLR -> map (\clauSLR -> [1 .. length clauSLR]) sentSLR) sLROfATransListListList  -- [[[Int]]]
+                 sLROfATransList = (concat . concat) sLROfATransListListList    -- [sLROfATrans]
+                 idxList = (concat . concat) idxListListList                    -- [Int], namely [TransIdx]
+                 clauTagList = map fst sLROfATransList                          -- [(SentIdx, ClauIdx)]
+                 transTagList = map (\((sentIdx, clauIdx), transIdx) -> (sentIdx, clauIdx, transIdx)) $ zip clauTagList idxList  -- [(SentIdx,ClauIdx,TransIdx)]
+                 sLRList = map snd sLROfATransList                              -- [(Stub, [Rule])]
+             putStrLn $ " clusteringAnalysis Func. 0x14: Num. of SLR samples = " ++ show (length sLRList)
 
              let phraSyns2RulesList = map (\(stub,rules) -> (map phraCate2PhraSyn stub, rules)) sLRList     -- [([PhraSyn], [Rule])]
-             let phraSyn0s2RulesList = map (\(stub,rules) -> (map phraCate2PhraSyn0 stub, rules)) sLRList   -- [([PhraSyn0], [Rule])]
-             let biTreePhraSyn2RulesList = map (\(stub,rules) -> ((biTreePhraCate2BiTreePhraSyn . forest2BiTree . findForest) stub, rules)) sLRList     -- [(BiTree PhraSyn, [Rule])]
-             let biTreePhraSyn02RulesList = map (\(stub,rules) -> ((biTreePhraCate2BiTreePhraSyn0 . forest2BiTree . findForest) stub, rules)) sLRList   -- [(BiTree PhraSyn0, [Rule])]
+                 phraSyn0s2RulesList = map (\(stub,rules) -> (map phraCate2PhraSyn0 stub, rules)) sLRList   -- [([PhraSyn0], [Rule])]
+                 biTreePhraSyn2RulesList = map (\(stub,rules) -> ((biTreePhraCate2BiTreePhraSyn . forest2BiTree . findForest) stub, rules)) sLRList     -- [(BiTree PhraSyn, [Rule])]
+                 biTreePhraSyn02RulesList = map (\(stub,rules) -> ((biTreePhraCate2BiTreePhraSyn0 . forest2BiTree . findForest) stub, rules)) sLRList   -- [(BiTree PhraSyn0, [Rule])]
+                 biTreePhraSyn0se2RulesList = map (\(stub,rules) -> ((biTreePhraCate2BiTreePhraSyn0se . forest2BiTree . findForest) stub, rules)) sLRList   -- [(BiTree PhraSyn0se, [Rule])]
+
 
              let transTagList' = map (\x -> [(toMySQLText . show) x]) transTagList          -- [[MySQLText]]
-             let sqlstat = DS.fromString $ "DELETE FROM " ++ slr_ripe_corpus ++ " WHERE transTag = ?"
+                 sqlstat = DS.fromString $ "DELETE FROM " ++ slr_ripe_corpus ++ " WHERE transTag = ?"
              executeMany conn sqlstat transTagList'
 
-             let vList = map (\(v,w,x,y,z) -> [(toMySQLText . show) v
-                                              ,(toMySQLText . phraSyns2RulesToString) w
-                                              ,(toMySQLText . phraSyn0s2RulesToString) x
-                                              ,(toMySQLText . biTreePhraSyn2RulesToString) y
-                                              ,(toMySQLText . biTreePhraSyn02RulesToString) z
-                                              ]) $ zip5 transTagList
-                                                        phraSyns2RulesList
-                                                        phraSyn0s2RulesList
-                                                        biTreePhraSyn2RulesList
-                                                        biTreePhraSyn02RulesList
+             let vList = map (\(u,v,w,x,y,z) -> [(toMySQLText . show) u
+                                                ,(toMySQLText . phraSyns2RulesToString) v
+                                                ,(toMySQLText . phraSyn0s2RulesToString) w
+                                                ,(toMySQLText . biTreePhraSyn2RulesToString) x
+                                                ,(toMySQLText . biTreePhraSyn02RulesToString) y
+                                                ,(toMySQLText . biTreePhraSyn0se2RulesToString) z
+                                                ]) $ zip6 transTagList
+                                                          phraSyns2RulesList
+                                                          phraSyn0s2RulesList
+                                                          biTreePhraSyn2RulesList
+                                                          biTreePhraSyn02RulesList
+                                                          biTreePhraSyn0se2RulesList
 
-             let sqlstat = DS.fromString $ "INSERT INTO " ++ slr_ripe_corpus ++ " SET transTag = ?, phrasyn_list_rules = ?, phrasyn0_list_rules = ?, bitree_phrasyn_rules = ?, bitree_phrasyn0_rules = ?"
+             let sqlstat = DS.fromString $ "INSERT INTO " ++ slr_ripe_corpus ++ " SET transTag = ?, phrasyn_list_rules = ?, phrasyn0_list_rules = ?, bitree_phrasyn_rules = ?, bitree_phrasyn0_rules = ?, bitree_phrasyn0se_rules = ?"
              oks <- executeMany conn sqlstat vList
              let lastInsertID = getOkLastInsertID (last oks)
-             putStrLn $ " clusteringAnalysis Func. 20(14):: LastInsertID : " ++ show lastInsertID
+             putStrLn $ " clusteringAnalysis Func. 0x14:: LastInsertID : " ++ show lastInsertID
 
              t1 <- getCurrentTime                                               -- UTCTime
              putStrLn $ "\n Total calculating time: " ++ show (diffUTCTime t1 t0)
@@ -2226,14 +2233,14 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
          else putStr ""
 
-{- 21(15H). From SLR ripe samples, get inter-value similarity degrees of every PhraSyn's basic attribue.
+{- 0x15. From SLR ripe samples, get inter-value similarity degrees of every PhraSyn's basic attribue.
  - slr_ripe_corpus: Source of PhraSyns
  - type_sim_tbl: MySQL table storing inter-type similarity degrees
  - tag_sim_tbl: MySQL table storing inter-tag similarity degrees
  - stru_sim_tbl:MySQL table storing inter-phrastru similarity degrees
  - span_sim_tbl: MySQL table storing inter-phrasal span similarity degrees
  -}
-    if funcIndex == 21
+    if funcIndex == 0x15
        then do
          confInfo <- readFile "Configuration"
          let slr_ripe_corpus = getConfProperty "slr_ripe_corpus" confInfo
@@ -2350,13 +2357,13 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
          else putStr ""
 
-{- 22(16H). From SLR ripe samples, get inter-value similarity degrees of every PhraSyn0's basic attribue.
+{- 0x16. From SLR ripe samples, get inter-value similarity degrees of every PhraSyn0's basic attribue.
  - slr_ripe_corpus: Source of PhraSyn0s
  - type_sim_tbl: MySQL table storing inter-type similarity degrees
  - tag_sim_tbl: MySQL table storing inter-tag similarity degrees
  - stru_sim_tbl:MySQL table storing inter-phrastru similarity degrees
  -}
-    if funcIndex == 22
+    if funcIndex == 0x16
        then do
          confInfo <- readFile "Configuration"
          let slr_ripe_corpus = getConfProperty "slr_ripe_corpus" confInfo
@@ -2455,13 +2462,13 @@ clusteringAnalysis funcIndex = do
            else putStrLn "Operation was canceled."
          else putStr ""
 
-{- 23(17H). From syntax_ambig_resol_model samples, get inter-value similarity degrees of every PhraSyn0's basic attribue.
+{- 0x17. From syntax_ambig_resol_model samples, get inter-value similarity degrees of every PhraSyn0's basic attribue.
  - syntax_ambig_resol_model: Source of PhraSyn0s
  - type_sim_tbl: MySQL table storing inter-type similarity degrees
  - tag_sim_tbl: MySQL table storing inter-tag similarity degrees
  - stru_sim_tbl:MySQL table storing inter-phrastru similarity degrees
  -}
-    if funcIndex == 23
+    if funcIndex == 0x17
        then do
          confInfo <- readFile "Configuration"
          let syntax_ambig_resol_model = getConfProperty "syntax_ambig_resol_model" confInfo
@@ -3925,13 +3932,13 @@ getSIdx2ContextOfCC1Base :: SIdx -> SIdx -> IO [(SIdx, ContextOfCC1)]
 getSIdx2ContextOfCC1Base startIdx endIdx = do
     conn <- getConn
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
-    let cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
-    case cate_ambig_resol_model of
+    let cate_ambig_resol_source = getConfProperty "cate_ambig_resol_source" confInfo
+    case cate_ambig_resol_source of
       x | elem x ["slr_corpus_202509"] -> do
           let startIdx' = case startIdx of
                             0 -> 1
                             _ -> startIdx
-          let sqlstat = DS.fromString $ "SELECT COUNT(*) FROM " ++ cate_ambig_resol_model
+          let sqlstat = DS.fromString $ "SELECT COUNT(*) FROM " ++ cate_ambig_resol_source
           (defs, is) <- query_ conn sqlstat
           rows <- readStreamByInt64 [] is
           let endIdx' = case endIdx of
@@ -3940,8 +3947,8 @@ getSIdx2ContextOfCC1Base startIdx endIdx = do
 
           putStrLn $ "stardIdx = " ++ show startIdx' ++ " , endIdx = " ++ show endIdx'
 
-          putStrLn $ "The source of SIdx and ContextOfCC1 is set as: " ++ cate_ambig_resol_model     -- Display the source of SIdx and ContextOfCC1
-          let sqlstat = DS.fromString $ "SELECT id, phrasyn_list_rules FROM " ++ cate_ambig_resol_model ++ " where id >= ? and id <= ?"
+          putStrLn $ "The source of SIdx and ContextOfCC1 is set as: " ++ cate_ambig_resol_source     -- Display the source of SIdx and ContextOfCC1
+          let sqlstat = DS.fromString $ "SELECT id, phrasyn_list_rules FROM " ++ cate_ambig_resol_source ++ " where id >= ? and id <= ?"
           stmt <- prepareStmt conn sqlstat
           (defs, is) <- queryStmt conn stmt [toMySQLInt32U startIdx', toMySQLInt32U endIdx']
 
@@ -3953,7 +3960,7 @@ getSIdx2ContextOfCC1Base startIdx endIdx = do
           putStrLn $ "getSIdx2ContextOfCC1Base: Num. of ContextOfCC1 Samples = " ++ show contextOfCC1SampleNum
           return sIdx2ContextOfCC1List
       _ -> do
-        putStrLn "getSIdx2ContextOfCC1Base: Value of property 'cate_ambig_resol_model' does not match any MySQL table."
+        putStrLn "getSIdx2ContextOfCC1Base: Value of property 'cate_ambig_resol_source' does not match any MySQL table."
         return []
 
 {- Reading SIdx and ContextOfCC2 from the sample database of a certain cate_conv_resol_model, such as 'slr_corpus_202509'.
@@ -3964,13 +3971,13 @@ getSIdx2ContextOfCC2Base :: SIdx -> SIdx -> IO [(SIdx, ContextOfCC2)]
 getSIdx2ContextOfCC2Base startIdx endIdx = do
     conn <- getConn
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
-    let cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
-    case cate_ambig_resol_model of
+    let cate_ambig_resol_source = getConfProperty "cate_ambig_resol_source" confInfo
+    case cate_ambig_resol_source of
       x | elem x ["slr_corpus_202509"] -> do
           let startIdx' = case startIdx of
                             0 -> 1
                             _ -> startIdx
-          let sqlstat = DS.fromString $ "SELECT COUNT(*) FROM " ++ cate_ambig_resol_model
+          let sqlstat = DS.fromString $ "SELECT COUNT(*) FROM " ++ cate_ambig_resol_source
           (defs, is) <- query_ conn sqlstat
           rows <- readStreamByInt64 [] is
           let endIdx' = case endIdx of
@@ -3979,8 +3986,8 @@ getSIdx2ContextOfCC2Base startIdx endIdx = do
 
           putStrLn $ "stardIdx = " ++ show startIdx' ++ " , endIdx = " ++ show endIdx'
 
-          putStrLn $ "The source of SIdx and ContextOfCC2 is set as: " ++ cate_ambig_resol_model     -- Display the source of SIdx and ContextOfCC2
-          let sqlstat = DS.fromString $ "SELECT id, phrasyn0_list_rules FROM " ++ cate_ambig_resol_model ++ " where id >= ? and id <= ?"
+          putStrLn $ "The source of SIdx and ContextOfCC2 is set as: " ++ cate_ambig_resol_source     -- Display the source of SIdx and ContextOfCC2
+          let sqlstat = DS.fromString $ "SELECT id, phrasyn0_list_rules FROM " ++ cate_ambig_resol_source ++ " where id >= ? and id <= ?"
           stmt <- prepareStmt conn sqlstat
           (defs, is) <- queryStmt conn stmt [toMySQLInt32U startIdx', toMySQLInt32U endIdx']
 
@@ -3992,7 +3999,7 @@ getSIdx2ContextOfCC2Base startIdx endIdx = do
           putStrLn $ "getSIdx2ContextOfCC2Base: Num. of ContextOfCC2 Samples = " ++ show contextOfCC2SampleNum
           return sIdx2ContextOfCC2List
       _ -> do
-        putStrLn "getSIdx2ContextOfCC2Base: Value of property 'cate_ambig_resol_model' does not match any MySQL table."
+        putStrLn "getSIdx2ContextOfCC2Base: Value of property 'cate_ambig_resol_source' does not match any MySQL table."
         return []
 
 {- Reading SIdx and ContextOfCC3 from the sample database of a certain cate_conv_resol_model, such as 'slr_corpus_202509'.
@@ -4003,13 +4010,13 @@ getSIdx2ContextOfCC3Base :: SIdx -> SIdx -> IO [(SIdx, ContextOfCC3)]
 getSIdx2ContextOfCC3Base startIdx endIdx = do
     conn <- getConn
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
-    let cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
-    case cate_ambig_resol_model of
+    let cate_ambig_resol_source = getConfProperty "cate_ambig_resol_source" confInfo
+    case cate_ambig_resol_source of
       x | elem x ["slr_corpus_202509"] -> do
           let startIdx' = case startIdx of
                             0 -> 1
                             _ -> startIdx
-          let sqlstat = DS.fromString $ "SELECT COUNT(*) FROM " ++ cate_ambig_resol_model
+          let sqlstat = DS.fromString $ "SELECT COUNT(*) FROM " ++ cate_ambig_resol_source
           (defs, is) <- query_ conn sqlstat
           rows <- readStreamByInt64 [] is
           let endIdx' = case endIdx of
@@ -4018,8 +4025,8 @@ getSIdx2ContextOfCC3Base startIdx endIdx = do
 
           putStrLn $ "stardIdx = " ++ show startIdx' ++ " , endIdx = " ++ show endIdx'
 
-          putStrLn $ "The source of SIdx and ContextOfCC3 is set as: " ++ cate_ambig_resol_model     -- Display the source of SIdx and ContextOfCC3
-          let sqlstat = DS.fromString $ "SELECT id, bitree_phrasyn_rules FROM " ++ cate_ambig_resol_model ++ " where id >= ? and id <= ?"
+          putStrLn $ "The source of SIdx and ContextOfCC3 is set as: " ++ cate_ambig_resol_source     -- Display the source of SIdx and ContextOfCC3
+          let sqlstat = DS.fromString $ "SELECT id, bitree_phrasyn_rules FROM " ++ cate_ambig_resol_source ++ " where id >= ? and id <= ?"
           stmt <- prepareStmt conn sqlstat
           (defs, is) <- queryStmt conn stmt [toMySQLInt32U startIdx', toMySQLInt32U endIdx']
 
@@ -4031,7 +4038,7 @@ getSIdx2ContextOfCC3Base startIdx endIdx = do
           putStrLn $ "getSIdx2ContextOfCC3Base: Num. of ContextOfCC3 Samples = " ++ show contextOfCC3SampleNum
           return sIdx2ContextOfCC3List
       _ -> do
-        putStrLn "getSIdx2ContextOfCC3Base: Value of property 'cate_ambig_resol_model' does not match any MySQL table."
+        putStrLn "getSIdx2ContextOfCC3Base: Value of property 'cate_ambig_resol_source' does not match any MySQL table."
         return []
 
 {- Reading SIdx and ContextOfCC4 from the sample database of a certain cate_conv_resol_model, such as 'slr_corpus_202509'.
@@ -4042,13 +4049,13 @@ getSIdx2ContextOfCC4Base :: SIdx -> SIdx -> IO [(SIdx, ContextOfCC4)]
 getSIdx2ContextOfCC4Base startIdx endIdx = do
     conn <- getConn
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
-    let cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
-    case cate_ambig_resol_model of
+    let cate_ambig_resol_source = getConfProperty "cate_ambig_resol_source" confInfo
+    case cate_ambig_resol_source of
       x | elem x ["slr_corpus_202509"] -> do
           let startIdx' = case startIdx of
                             0 -> 1
                             _ -> startIdx
-          let sqlstat = DS.fromString $ "SELECT COUNT(*) FROM " ++ cate_ambig_resol_model
+          let sqlstat = DS.fromString $ "SELECT COUNT(*) FROM " ++ cate_ambig_resol_source
           (defs, is) <- query_ conn sqlstat
           rows <- readStreamByInt64 [] is
           let endIdx' = case endIdx of
@@ -4057,8 +4064,8 @@ getSIdx2ContextOfCC4Base startIdx endIdx = do
 
           putStrLn $ "stardIdx = " ++ show startIdx' ++ " , endIdx = " ++ show endIdx'
 
-          putStrLn $ "The source of SIdx and ContextOfCC4 is set as: " ++ cate_ambig_resol_model     -- Display the source of SIdx and ContextOfCC3
-          let sqlstat = DS.fromString $ "SELECT id, bitree_phrasyn0_rules FROM " ++ cate_ambig_resol_model ++ " where id >= ? and id <= ?"
+          putStrLn $ "The source of SIdx and ContextOfCC4 is set as: " ++ cate_ambig_resol_source     -- Display the source of SIdx and ContextOfCC3
+          let sqlstat = DS.fromString $ "SELECT id, bitree_phrasyn0_rules FROM " ++ cate_ambig_resol_source ++ " where id >= ? and id <= ?"
           stmt <- prepareStmt conn sqlstat
           (defs, is) <- queryStmt conn stmt [toMySQLInt32U startIdx', toMySQLInt32U endIdx']
 
@@ -4070,7 +4077,7 @@ getSIdx2ContextOfCC4Base startIdx endIdx = do
           putStrLn $ "getSIdx2ContextOfCC4Base: Num. of ContextOfCC4 Samples = " ++ show contextOfCC4SampleNum
           return sIdx2ContextOfCC4List
       _ -> do
-        putStrLn "getSIdx2ContextOfCC4Base: Value of property 'cate_ambig_resol_model' does not match any MySQL table."
+        putStrLn "getSIdx2ContextOfCC4Base: Value of property 'cate_ambig_resol_source' does not match any MySQL table."
         return []
 
 {- Get similarity degree between two prior contexts, namely two vectors of (LeftExtend, LeftOver, RightOver, RightExtend, OverType).
