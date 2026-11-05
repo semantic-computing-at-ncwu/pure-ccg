@@ -674,7 +674,7 @@ replaceBlankByComma (x:xs)
 getConfProperty :: String -> String -> String
 getConfProperty propName confInfo = case propValue of
     Just x -> x
-    Nothing -> ""
+    Nothing -> error $ " getConfProperty: Property '" ++ propName ++ "' does NOT exist." 
     where
       confInfo' = [kv | kv <- DS.lines confInfo, length kv /= 0]                -- Remove blank lines
       validConfInfo = [kv | kv <- confInfo', kv!!0 /= '#']                      -- Remove the lines starting from '#'

@@ -33,6 +33,7 @@ import Clustering
 import KMedoids
 import Maintain
 import BiTreeLSTM
+import BiTreeLSTM4CateDisam
 import Output (showSnScript2List)
 import Text.Printf
 import qualified Numeric.LinearAlgebra as LA
@@ -888,11 +889,13 @@ doExperiments username = do
     putStrLn " E -> Test stru2Vec in Module Statistics"
     putStrLn " F -> Test Binary Tree LSTM for syntactic disambiguity in Module BiTreeLSTM"
     putStrLn " 10 -> Test the building of sample set in Module BiTreeLSTM"
-    putStrLn " 11 -> Train Binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM"
+    putStrLn " 11 -> Train Binary tree LSTM for syntactic disambiguation in Module BiTreeLSTM"
     putStrLn " 12 -> Evaluate syntactic disambiguation by sample with most similiar context"
+    putStrLn " 13 -> Test the building of sample set in Module BiTreeLSTM4CateDisam"
+    putStrLn " 14 -> Train Binary tree LSTM for category disambiguation in Module BiTreeLSTM4CateDisam"
     putStrLn " 0 -> Go back to the upper layer"
 
-    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","10","11","12","0"] True
+    line <- getLineUntil "Please input command [RETURN for ?]: " ["?","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F","10","11","12","13","14","0"] True
     if line == "0"
       then putStrLn "Go back to the upper layer."              -- Naturally return to upper layer.
       else do
@@ -916,6 +919,8 @@ doExperiments username = do
                "10" -> doTestBuildSampleSetInBiTreeLSTM username
                "11" -> doTrainBiTreeLSTM username
                "12" -> doEvalSyntaxDisambigBySampleWithMaxSim username
+               "13" -> doTestBuildSampleSetInBiTreeLSTM4CateDism username
+               "14" -> doTrainBiTreeLSTM4CateDisam username
              doExperiments username                            -- Rear recursion
 
 {- B.1 Parse the sentence indicated by serial_num, here 'username' has not been used.
@@ -1359,7 +1364,7 @@ doTestBuildSampleSetInBiTreeLSTM username = do
         putStrLn $ "Size of sample set = " ++ show (length sampleSet)
       else pure ()
 
-{- B.11 Training Binary tree LSTM for syntactic disambiguity in Module BiTreeLSTM, then testing the model.
+{- B.11 Training Binary tree LSTM for syntactic disambiguation in Module BiTreeLSTM, then testing the model.
  -}
 doTrainBiTreeLSTM :: String -> IO ()
 doTrainBiTreeLSTM username = testPipeline2
@@ -1553,6 +1558,56 @@ doEvalSyntaxDisambigBySampleWithMaxSim username = do
         putStrLn $ "  weighted_avg_precision: " ++ (printf "%.4f" weighted_avg_precision) ++ ", weighted_avg_recall: " ++ (printf "%.4f" weighted_avg_recall) ++ ", weighted_avg_f1Score: " ++ (printf "%.4f" weighted_avg_f1Score)
 
       else pure ()           -- Command was cancelled.
+
+{- B.13 Test the building of sample set in Module BiTreeLSTM4CateDisam.
+ -}
+doTestBuildSampleSetInBiTreeLSTM4CateDism :: String -> IO ()
+doTestBuildSampleSetInBiTreeLSTM4CateDism username = do
+    confInfo <- readFile "Configuration"
+    let
+      tree_source = getConfProperty "tree_source" confInfo
+      startIdxStr = getConfProperty "defaultStartIdx" confInfo
+      endIdxStr = getConfProperty "defaultEndIdx" confInfo
+
+      cate_ambig_resol_model = getConfProperty "cate_ambig_resol_model" confInfo
+      rule_num_str = getConfProperty "rule_num" confInfo
+      cate_ambig_resol_source = getConfProperty "cate_ambig_resol_source" confInfo
+      phrasyn_model = getConfProperty "phrasyn_model" confInfo
+      dim_word_str = getConfProperty "dim_word" confInfo
+      dim_cate_str = getConfProperty "dim_cate" confInfo
+      dim_tag_str = getConfProperty "dim_tag" confInfo
+      dim_stru_str = getConfProperty "dim_stru" confInfo
+      projDimStr = getConfProperty "projDim" confInfo
+      hidDimStr = getConfProperty "hidDim" confInfo
+
+      dim_cate = read dim_cate_str :: Int
+      dim_tag = read dim_tag_str :: Int
+      dim_stru = read dim_stru_str :: Int
+
+    putStrLn $ " tree_source: " ++ tree_source
+    putStrLn $ " startIdx: " ++ startIdxStr
+    putStrLn $ " endIdx: " ++ endIdxStr
+    putStrLn $ " cate_ambig_resol_model: " ++ cate_ambig_resol_model
+    putStrLn $ " rule_num: " ++ rule_num_str
+    putStrLn $ " cate_ambig_resol_source: " ++ cate_ambig_resol_source
+    putStrLn $ " phrasyn_model: " ++ phrasyn_model
+    putStrLn $ " dim_word: " ++ dim_word_str
+    putStrLn $ " dim_cate: " ++ dim_cate_str
+    putStrLn $ " dim_tag: " ++ dim_tag_str
+    putStrLn $ " dim_stru: " ++ dim_stru_str
+
+    let prompt = " Test the building of sample set in Module BiTreeLSTM4CateDisam, are you sure? [y/n] (RETURN for 'y'): "
+    answer <- getLineUntil prompt ["y","n"] True
+    if answer == "y"
+      then do
+        sampleSet <- buildSampleSet4CateDisam dim_cate dim_tag dim_stru
+        putStrLn $ "Size of sample set = " ++ show (length sampleSet)
+      else pure ()
+
+{- B.14 Training Binary tree LSTM for category disambiguation in Module BiTreeLSTM4CateDisam, then testing the model.
+ -}
+doTrainBiTreeLSTM4CateDisam :: String -> IO ()
+doTrainBiTreeLSTM4CateDisam username = testPipeline4CateDisam
 
 -- C. Various maintenance tools.
 doMaintenance :: String -> IO ()

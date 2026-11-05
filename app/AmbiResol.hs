@@ -81,7 +81,7 @@ module AmbiResol (
     readPriorFromStr,    -- String -> Prior
     readAmbiResol1FromStr,   -- String -> AmbiResol1
     readPhraSyn0FromStr,     -- String -> PhraSyn0
-    readPhraSyn0seFromStr,        -- String -> PhraSyn0
+    readPhraSyn0seFromStr,   -- String -> PhraSyn0se
     readPhraSynFromStr,      -- String -> PhraSyn
     readPhraSyn1FromStr,     -- String -> PhraSyn1
     readPhraSyn0ListFromStr,      -- String -> [PhraSyn0]

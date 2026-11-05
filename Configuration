@@ -54,8 +54,9 @@ tree_target:treebank_by_script_with_semantics_not_reductive_20260817
 # Model of phrasal Syntax. Now two models are available: phrasyn0 and phrasyn
 # phrasyn0: (Category, Tag, PhraStru)
 # phrasyn: (Category, Tag, PhraStru, Span)
+# phrasyn0se: (Category, Tag, PhraStru, Seman)
 # phrasyn1: (Category, Tag, PhraStru, Seman, Span)
-phrasyn_model:phrasyn0
+phrasyn_model:phrasyn0se
 
 # Syntax ambiguity resolution model also is the name of MySQL table storing the samples of that model.
 # Model 'stru_gene_202412' is for StruGene0 = (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType, Prior).
@@ -89,8 +90,19 @@ max_sim_contextofsg_algo:T3a0-H-DONG
 
 # Category ambiguity resolution model
 # Possible values of this property:
-# SLR :: ([PhraCate], [Rule])
-cate_ambig_resol_model:SLR
+#   - SLR :: ([PhraCate], [Rule]), where PhraCate = ((Start, Span), [(Category, Tag, Seman, PhraStru, Act)], SecStart)
+#   - set_ps :: ([PhraSyn], [Rule]), where PhraSyn = (Category, Tag, PhraStru, Span)
+#   - set_ps0 :: ([PhraSyn0], [Rule]), where PhraSyn0 = (Category, Tag, PhraStru)
+#   - bt_ps :: (BiTree PhraSyn, [Rule])
+#   - bt_ps0 :: (BiTree PhraSyn0, [Rule])
+#   - bt_ps0se :: (BiTree PhraSyn0se, [Rule])
+cate_ambig_resol_model:bt_ps0se
+
+# Total of kind of category conversions
+rule_num:54
+
+# Threshhold value of multiple hots
+hot_threshhold:0.5
 
 # Switch of updating parsing tree, syntax or category ambiguity resolution samples in database.
 # For grammar inconsistancy, parsing by scripts sometimes includes manually ambiguity resolution, using new category conversion rules or syntax rules.
@@ -99,7 +111,7 @@ cate_ambig_resol_model:SLR
 # When NOT hope to update syntax or category ambiguity resolution samples in database, set this switch as Off.
 # Now, category ambiguity resolution model SLR samples are stored with treebank created by parsing with scripts.
 # Now, SLR samples are stored in treebank, requiring that 'tree_target_update_switch' is 'On'.
-tree_target_update_switch:On
+tree_target_update_switch:Off
 syntax_ambig_resol_sample_update_switch:Off
 category_ambig_resol_sample_update_switch:Off
 
@@ -119,6 +131,10 @@ decay_subtree_kernel:0.8
 syntax_resol_sample_startsn:1
 syntax_resol_sample_endsn:350
 
+# Range of serial numbers of sentences from which the used category ambiguity resolution model samples are.
+cate_resol_sample_startsn:1
+cate_resol_sample_endsn:350
+
 # Algo. of pruning in resolving syntactic ambiguity.
 prune_algo:NoDemandPhrase
 # prune_algo:FinalTree
@@ -134,9 +150,10 @@ cate_ambig_resol_target:treebank_SLR_clcg_20261023
 # Field name of SLR sample in MySQL table for storing category disambiguation samples.
 cars_field:bitree_phrasyn0se_rules
 
-# Range of serial_nums of the used category ambiguity resolution model samples.
-cate_resol_sample_startsn:1
-cate_resol_sample_endsn:350
+# Range of Field 'id' in MySQL table of category ambiguity resolution model samples.
+# Now range of this Field is [1, 4201].
+cate_resol_sample_startId:1
+cate_resol_sample_endId:1000
 
 # Benchmark treebank
 benchmark_treebank:corpus_pccg_manual

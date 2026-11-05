@@ -2170,11 +2170,12 @@ cate2Vec = do
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
     let phrasyn_model = getConfProperty "phrasyn_model" confInfo
         tree_source = getConfProperty "tree_source" confInfo
+        tree_field = getConfProperty "tree_field" confInfo
         startIdxStr = getConfProperty "defaultStartIdx" confInfo
         endIdxStr = getConfProperty "defaultEndIdx" confInfo
         startIdx = read startIdxStr :: Int
         endIdx = read endIdxStr :: Int
-        sqlstat = DS.fromString $ "select tree from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
+        sqlstat = DS.fromString $ "select " ++ tree_field ++ " from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
     stmt <- prepareStmt conn sqlstat
     (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx, toMySQLInt32 endIdx]
 
@@ -2190,9 +2191,9 @@ cate2Vec = do
         sentClauPhraList = map (map snd) sentClauTreeList     -- [[[PhraCate]]], here a PhraCate is the representation in memory of a phrase.
 
         typePair2SimTuple = case phrasyn_model of
-                          "phrasyn" -> getTypePair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfCate, NumOfCatePair, [((Category, Category), SimDeg)])
-                          "phrasyn0" -> getTypePair2SimFromSCPL0 sentClauPhraList
-                          _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
+          "phrasyn" -> getTypePair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfCate, NumOfCatePair, [((Category, Category), SimDeg)])
+          x | elem x ["phrasyn0", "phrasyn0se"] -> getTypePair2SimFromSCPL0 sentClauPhraList
+          _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
         typePair2SimList = fth4 typePair2SimTuple             -- [((Category, Category), SimDeg)]
         typeNum = snd4 typePair2SimTuple                      -- NumOfCate
         typeList = map (snd . fst) $ take typeNum typePair2SimList              -- [Category]
@@ -2208,11 +2209,12 @@ tag2Vec = do
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
     let phrasyn_model = getConfProperty "phrasyn_model" confInfo
         tree_source = getConfProperty "tree_source" confInfo
+        tree_field = getConfProperty "tree_field" confInfo
         startIdxStr = getConfProperty "defaultStartIdx" confInfo
         endIdxStr = getConfProperty "defaultEndIdx" confInfo
         startIdx = read startIdxStr :: Int
         endIdx = read endIdxStr :: Int
-        sqlstat = DS.fromString $ "select tree from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
+        sqlstat = DS.fromString $ "select " ++ tree_field ++ " from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
     stmt <- prepareStmt conn sqlstat
     (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx, toMySQLInt32 endIdx]
 
@@ -2228,9 +2230,9 @@ tag2Vec = do
         sentClauPhraList = map (map snd) sentClauTreeList     -- [[[PhraCate]]], here a PhraCate is the representation in memory of a phrase.
 
         tagPair2SimTuple = case phrasyn_model of
-                          "phrasyn" -> getTagPair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfTag, NumOfTagPair, [((Tag, Tag), SimDeg)])
-                          "phrasyn0" -> getTagPair2SimFromSCPL0 sentClauPhraList
-                          _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
+          "phrasyn" -> getTagPair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfTag, NumOfTagPair, [((Tag, Tag), SimDeg)])
+          x | elem x ["phrasyn0", "phrasyn0se"] -> getTagPair2SimFromSCPL0 sentClauPhraList
+          _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
         tagPair2SimList = fth4 tagPair2SimTuple               -- [((Tag, Tag), SimDeg)]
         tagNum = snd4 tagPair2SimTuple                        -- NumOfTag
         tagList = map (snd . fst) $ take tagNum tagPair2SimList              -- [Tag]
@@ -2247,11 +2249,12 @@ stru2Vec = do
     confInfo <- readFile "Configuration"                                        -- Read the local configuration file
     let phrasyn_model = getConfProperty "phrasyn_model" confInfo
         tree_source = getConfProperty "tree_source" confInfo
+        tree_field = getConfProperty "tree_field" confInfo
         startIdxStr = getConfProperty "defaultStartIdx" confInfo
         endIdxStr = getConfProperty "defaultEndIdx" confInfo
         startIdx = read startIdxStr :: Int
         endIdx = read endIdxStr :: Int
-        sqlstat = DS.fromString $ "select tree from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
+        sqlstat = DS.fromString $ "select " ++ tree_field ++ " from " ++ tree_source ++ " where serial_num >= ? and serial_num <= ?"
     stmt <- prepareStmt conn sqlstat
     (defs, is) <- queryStmt conn stmt [toMySQLInt32 startIdx, toMySQLInt32 endIdx]
 
@@ -2267,9 +2270,9 @@ stru2Vec = do
         sentClauPhraList = map (map snd) sentClauTreeList     -- [[[PhraCate]]], here a PhraCate is the representation in memory of a phrase.
 
         struPair2SimTuple = case phrasyn_model of
-                          "phrasyn" -> getStruPair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfStru, NumOfStruPair, [((PhraStru, PhraStru), SimDeg)])
-                          "phrasyn0" -> getStruPair2SimFromSCPL0 sentClauPhraList
-                          _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
+          "phrasyn" -> getStruPair2SimFromSCPL sentClauPhraList     -- (NumOfPhraSyn, NumOfStru, NumOfStruPair, [((PhraStru, PhraStru), SimDeg)])
+          x | elem x ["phrasyn0", "phrasyn0se"] -> getStruPair2SimFromSCPL0 sentClauPhraList
+          _ -> error $ "countInTree: Property " ++ phrasyn_model ++ " can not be recognized."
         struPair2SimList = fth4 struPair2SimTuple             -- [((PhraStru, PhraStru), SimDeg)]
         struNum = snd4 struPair2SimTuple                      -- NumOfPhraStru
         struList = map (snd . fst) $ take struNum struPair2SimList           -- [PhraStru]

@@ -864,6 +864,23 @@ sampleForwardLossGrad param ((ltree, rtree), action) =
       }
   in (loss, totalGrad)
 
+-- ===================== 单样本前向+损失+梯度 =====================
+sampleForwardLoss :: NetParam -> TrainSample -> Double
+sampleForwardLoss param ((ltree, rtree), action) =
+  let
+    lFwd = treeForwardCached param ltree
+    rFwd = treeForwardCached param rtree
+    LSTMState hl _ = tfRootState lFwd
+    LSTMState hr _ = tfRootState rFwd
+
+    concatH = LA.vjoin [hl, hr]
+    NetParam{..} = param
+    logits = clsWeight #> concatH + clsBias
+    pred = softmax logits
+    label = actionToOneHot action
+    loss = crossEntropy pred label
+  in loss
+
 batchTrainStep :: NetParam -> [TrainSample] -> Double -> (Double, NetParam)
 batchTrainStep param samples lr =
   let
@@ -905,7 +922,7 @@ mkNonLeaf cateVec tagVec struVec l r =
 trainLoop :: NetParam -> [TrainSample] -> Double -> Int -> IO NetParam
 trainLoop param _ _ 0 = return param
 trainLoop param samples lr epoch = do
-  gen <- mkStdGen <$> randomRIO (1,99999)
+  gen <- newStdGen
   let shuffled = shuffle_ samples gen
       (avgLoss, newParam) = batchTrainStep param shuffled lr
   when (epoch `mod` 50 == 0) $
@@ -1133,8 +1150,7 @@ buildSampleSet dim_cate dim_tag dim_stru = do
 evalLoss :: NetParam -> [TrainSample] -> Double
 evalLoss param samples = avgLoss
   where
-    pairs = map (sampleForwardLossGrad param) samples
-    losses = map fst pairs
+    losses = map (sampleForwardLoss param) samples
     totalLoss = sum losses
     sampleSetSize = fromIntegral (length samples)
     avgLoss = totalLoss / sampleSetSize

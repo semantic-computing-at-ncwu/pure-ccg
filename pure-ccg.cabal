@@ -67,6 +67,7 @@ executable pure-ccg-exe
   other-modules:
       AmbiResol
       BiTreeLSTM
+      BiTreeLSTM4CateDisam
       Category
       CL
       Clustering
@@ -141,6 +142,7 @@ test-suite pure-ccg-test
       UtilsSpec
       AmbiResol
       BiTreeLSTM
+      BiTreeLSTM4CateDisam
       Category
       CL
       Clustering
