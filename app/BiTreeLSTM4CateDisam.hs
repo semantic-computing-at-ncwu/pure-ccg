@@ -7,8 +7,8 @@
 
 -- Binary Tree-LSTM 词法消岐模型（Tai et al. 2015 Child-Sum 标准实现）
 module BiTreeLSTM4CateDisam (
-    buildSampleSet4CateDisam,
-    testPipeline4CateDisam
+    buildSampleSet,
+    testPipeline
 ) where
 
 import qualified Numeric.LinearAlgebra as LA
@@ -907,8 +907,8 @@ biTreePhrasyn0se2SyntaxTreeNodeFeat (Node phraSyn0se lt rt) cateVecMap tagVecMap
                    , oovCnt'', noovCnt'' + 1
                    )
 
-buildSampleSet4CateDisam :: Int -> Int -> Int -> IO [SampleRecord]
-buildSampleSet4CateDisam dim_cate dim_tag dim_stru = do
+buildSampleSet :: Int -> Int -> Int -> IO [SampleRecord]
+buildSampleSet dim_cate dim_tag dim_stru = do
   confInfo <- readFile "Configuration"
   let cate_ambig_resol_source = getConfProperty "cate_ambig_resol_source" confInfo
       cate_resol_sample_startId = getConfProperty "cate_resol_sample_startId" confInfo
@@ -954,8 +954,8 @@ buildSampleSet4CateDisam dim_cate dim_tag dim_stru = do
       oovTotal = foldl (+) 0 $ map snd3 sampleSetWithOOVCnt
       noovTotal = foldl (+) 0 $ map thd3 sampleSetWithOOVCnt
       prop = 100 * (fromIntegral oovTotal / fromIntegral noovTotal) :: Double
---  putStrLn $ "buildSampleSet4CateDisam: sampleSet!!0: " ++ show (sampleSet!!0)
-  putStrLn $ "buildSampleSet4CateDisam: oovTotal = " ++ show oovTotal ++ ", noovTotal = " ++ show noovTotal ++ ", proportion of oov words = " ++ (printf "%.2f" prop) ++ "%"
+--  putStrLn $ "buildSampleSet: sampleSet!!0: " ++ show (sampleSet!!0)
+  putStrLn $ "buildSampleSet: oovTotal = " ++ show oovTotal ++ ", noovTotal = " ++ show noovTotal ++ ", proportion of oov words = " ++ (printf "%.2f" prop) ++ "%"
   return sampleSet
 
 -- 评估整个数据集上模型预测的平均损失率
@@ -1034,8 +1034,8 @@ trainOneEpoch param samples lr batchSize = do
   return newParam
 
 --- ===================== 训练与测试：可独立运行 =====================
-testPipeline4CateDisam :: IO ()
-testPipeline4CateDisam = do
+testPipeline :: IO ()
+testPipeline = do
   putStrLn "==== Binary Tree-LSTM ===="
   confInfo <- readFile "Configuration"
   let
@@ -1135,7 +1135,7 @@ testPipeline4CateDisam = do
 
                    initP <- initNetParam leafRawDim nonLeafRawDim projDim hidDim labelTotal
 
-                   samples0 <- buildSampleSet4CateDisam dim_cate dim_tag dim_stru
+                   samples0 <- buildSampleSet dim_cate dim_tag dim_stru
                    let samples = map (\x -> (recTree x, recTargetAct x)) samples0
                    putStrLn $ "总样本数量：" ++ show (length samples)
 

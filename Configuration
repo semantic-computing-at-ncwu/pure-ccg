@@ -51,12 +51,12 @@ tree_field:tree
 #   - tree_target:treebank_by_script_with_semantics_not_reductive_20260129
 tree_target:treebank_by_script_with_semantics_not_reductive_20260817
 
-# Model of phrasal Syntax. Now two models are available: phrasyn0 and phrasyn
+# Model of phrasal Syntax. Now two models are available:
 # phrasyn0: (Category, Tag, PhraStru)
 # phrasyn: (Category, Tag, PhraStru, Span)
 # phrasyn0se: (Category, Tag, PhraStru, Seman)
 # phrasyn1: (Category, Tag, PhraStru, Seman, Span)
-phrasyn_model:phrasyn0se
+phrasyn_model:phrasyn0
 
 # Syntax ambiguity resolution model also is the name of MySQL table storing the samples of that model.
 # Model 'stru_gene_202412' is for StruGene0 = (LeftExtend0, LeftOver0, RightOver0, RightExtend0, OverType, Prior).
@@ -85,8 +85,8 @@ syntax_ambig_resol_model:stru_gene3a0s_clcg_20260817
 # T3-H-DONG: Type 3 overlapping tree with LeftExtend and RightExtend
 # T3a-H-DONG: Type 3a overlapping tree without LeftExtend and RightExtend
 # T3a0-H-DONG: Type 3a0 overlapping tree without LeftExtend and RightExtend, besides using PhraSyn0
-# T3a0s-Q-J-WANG: Type 3a0s overlapping tree without LeftExtend and RightExtend, besides using PhraSyn0 and logic semantics
-max_sim_contextofsg_algo:T3a0-H-DONG
+# T3a0s-B-LIU: Type 3a0s overlapping tree without LeftExtend and RightExtend, besides using PhraSyn0 and logic semantics
+max_sim_contextofsg_algo:T0-Q-Q-WANG
 
 # Category ambiguity resolution model
 # Possible values of this property:
@@ -337,10 +337,10 @@ batchSize:64
 earlyStopPatience:10
 
 # Index number range of the used syntax ambiguity resolution model samples.
-# Number of samples in stru_gene3a0s_20260817 is 13857.
+# Number of samples in stru_gene3a0s_clcg_20260817 is 13857.
 # Number of samples in stru_gene_phrasyn0_clcg_20260922 is 11262.
 syntax_resol_sample_startId:1
-syntax_resol_sample_endId:1000
+syntax_resol_sample_endId:3200
 
 # Leaf node uses embedding semantics or not.
 # False: Not use embedding vector, at this moment dim_word = 0 and dim_word_mlpout = 0.
